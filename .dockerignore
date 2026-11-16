@@ -1,0 +1,16 @@
+.git
+.env
+.env.*
+**/node_modules
+frontend/dist
+backend/data
+backend/tests
+backend/.venv
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+.impeccable
+.claude
+docs
+tasks
+backups

@@ -1,0 +1,30 @@
+# 비밀값과 데이터는 저장소에 올리지 않는다
+.env
+.env.*
+!.env.example
+backend/data/
+backups/
+*.db
+*.db-wal
+*.db-shm
+
+# 파이썬
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# 화면
+node_modules/
+frontend/dist/
+
+# 이 PC의 경로가 적힌 실행 설정
+.claude/launch.json
+
+# 도구가 만든 임시 파일
+.impeccable/review/
+.impeccable/tmp/
+.impeccable/hook.cache.json

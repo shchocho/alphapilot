@@ -1,0 +1,110 @@
+/* Universal Design DNA → Tailwind v4 매핑. 값은 모두 tokens.css의 변수를 가리킨다(여기에 색·크기를 직접 쓰지 않는다). */
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-surface-inverse: var(--surface-inverse);
+  --color-ink: var(--ink);
+  --color-ink-secondary: var(--ink-secondary);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-inverse: var(--ink-inverse);
+  --color-border: var(--border);
+  --color-divider: var(--divider);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-on-primary: var(--on-primary);
+  --color-secondary: var(--secondary);
+  --color-secondary-hover: var(--secondary-hover);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-on-accent: var(--on-accent);
+  --color-accent-subtle: var(--accent-subtle);
+  --color-focus: var(--focus);
+  --color-success: var(--success);
+  --color-success-subtle: var(--success-subtle);
+  --color-warning: var(--warning);
+  --color-warning-subtle: var(--warning-subtle);
+  --color-danger: var(--danger);
+  --color-danger-hover: var(--danger-hover);
+  --color-on-danger: var(--on-danger);
+  --color-danger-subtle: var(--danger-subtle);
+  --color-info: var(--info);
+  --color-info-subtle: var(--info-subtle);
+  --color-scrim: var(--scrim);
+  --color-data-1: var(--data-1);
+  --color-data-2: var(--data-2);
+  --color-data-3: var(--data-3);
+  /* AlphaPilot 추가: 가격 방향 */
+  --color-up: var(--up);
+  --color-up-solid: var(--up-solid);
+  --color-up-subtle: var(--up-subtle);
+  --color-down: var(--down);
+  --color-down-solid: var(--down-solid);
+  --color-down-subtle: var(--down-subtle);
+
+  --radius-none: var(--radius-none);
+  --radius-xs: var(--radius-xs);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+  --radius-full: var(--radius-full);
+  --shadow-1: var(--shadow-1);
+  --shadow-2: var(--shadow-2);
+  --shadow-3: var(--shadow-3);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --spacing: 4px;
+
+  /* 타입 스케일(디자인 시스템의 단계 이름 그대로). 이 화면들은 Utility 레이어라 본문은 body-sm이다. */
+  --text-caption: 12px;
+  --text-caption--line-height: 1.5;
+  --text-caption--letter-spacing: 0.01em;
+  --text-label: 13px;
+  --text-label--line-height: 1.4;
+  --text-label--letter-spacing: 0.005em;
+  --text-data: 13px;
+  --text-data--line-height: 1.5;
+  --text-body-sm: 14px;
+  --text-body-sm--line-height: 1.6;
+  --text-button: 15px;
+  --text-button--line-height: 1.2;
+  --text-button--letter-spacing: -0.003em;
+  --text-body: 16px;
+  --text-body--line-height: 1.65;
+  --text-h6: 16px;
+  --text-h6--line-height: 1.5;
+  --text-h5: 18px;
+  --text-h5--line-height: 1.44;
+  --text-h5--letter-spacing: -0.004em;
+  --text-h4: 21px;
+  --text-h4--line-height: 1.36;
+  --text-h4--letter-spacing: -0.008em;
+  --text-h3: 26px;
+  --text-h3--line-height: 1.28;
+  --text-h3--letter-spacing: -0.012em;
+  --text-h2: 34px;
+  --text-h2--line-height: 1.2;
+  --text-h2--letter-spacing: -0.018em;
+  /* Brand 레이어(로그인 전 첫 화면)에서만 쓰는 큰 단계 */
+  --text-body-lg: 18px;
+  --text-body-lg--line-height: 1.6;
+  --text-h1: clamp(28px, 3.4vw, 46px);
+  --text-h1--line-height: 1.18;
+  --text-h1--letter-spacing: -0.022em;
+  --text-display: clamp(34px, 5vw, 68px);
+  --text-display--line-height: 1.1;
+  --text-display--letter-spacing: -0.028em;
+
+  /* 컨테이너 폭 */
+  --container-reading: var(--reading-max);
+  --container-content: var(--content-max);
+  --container-wide: var(--wide-max);
+
+  /* 모션: 시간과 곡선은 토큰만 쓴다 */
+  --default-transition-duration: var(--duration-fast);
+  --default-transition-timing-function: var(--ease-standard);
+  --ease-enter: var(--ease-enter);
+  --ease-exit: var(--ease-exit);
+  --ease-standard: var(--ease-standard);
+}

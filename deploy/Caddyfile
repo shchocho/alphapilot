@@ -1,0 +1,19 @@
+# HTTPS 종단. 도메인의 DNS가 이 서버를 가리키면 Caddy가 인증서를 스스로 받아 갱신한다.
+# 도메인은 .env의 AP_DOMAIN에서 읽는다.
+{$AP_DOMAIN} {
+	encode zstd gzip
+
+	# 실시간 알림(SSE)이 중간에 고이지 않게 바로 흘려보낸다.
+	reverse_proxy app:8000 {
+		flush_interval -1
+	}
+
+	header {
+		-Server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

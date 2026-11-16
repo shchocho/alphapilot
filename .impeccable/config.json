@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "design-system-font",
+        "value": "*",
+        "files": [
+          ".impeccable/mocks/decision/*.html"
+        ],
+        "createdAt": "2026-11-16T11:02:52.888Z",
+        "reason": "Agent: 방향을 고를 때 쓴 지난 시안들이다. 출시되는 화면이 아니고, 채택하지 않은 방향의 서체를 일부러 담고 있다"
+      }
+    ]
+  }
+}

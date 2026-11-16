@@ -1,0 +1,52 @@
+# AlphaPilot 서버 구성: 앱(매매 엔진 + API + 화면) 하나와 HTTPS를 맡는 Caddy.
+# 실행: 저장소 루트에 .env를 만든 뒤 `docker compose up -d --build`
+# 안내: docs/deploy.md
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      AP_ENV: prod
+      AP_DATA_DIR: /data
+      AP_STATIC_DIR: /app/static
+      TZ: Asia/Seoul
+    volumes:
+      - alphapilot-data:/data
+    # 밖으로 포트를 열지 않는다. Caddy만 내부 네트워크로 접근한다.
+    expose:
+      - "8000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # 엔진은 한 벌만 돌아야 한다. 이 서비스를 여러 개로 늘리지 않는다.
+    deploy:
+      replicas: 1
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      AP_DOMAIN: ${AP_DOMAIN:?.env에 AP_DOMAIN(접속할 도메인)을 넣으세요}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  alphapilot-data:
+  caddy-data:
+  caddy-config:
