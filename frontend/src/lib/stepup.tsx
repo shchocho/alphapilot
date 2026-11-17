@@ -76,7 +76,7 @@ export function StepUpProvider({ children }: { children: ReactNode }) {
               취소
             </Button>
             <Button type="submit" variant="primary" busy={busy} disabled={code.length !== 6}>
-              확인
+              확인하고 계속
             </Button>
           </div>
         </form>

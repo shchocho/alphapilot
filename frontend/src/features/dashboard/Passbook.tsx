@@ -54,7 +54,7 @@ function SeqNumber({ row, onFollow }: { row: LedgerRow; onFollow?: (chainId: str
       type="button"
       onClick={() => onFollow(row.chain_id)}
       aria-label={`거래번호 ${seqLabel(row.seq)}의 판단 사슬 보기`}
-      className="stamp -mx-1 -my-2 rounded-xs px-1 py-2 text-ink-secondary underline decoration-border decoration-dotted underline-offset-4 transition-colors duration-(--duration-fast) hover:text-ink hover:decoration-ink-muted"
+      className="stamp tap -mx-1 -my-2 rounded-xs px-1 py-2 text-ink-secondary underline decoration-border decoration-dotted underline-offset-4 transition-colors duration-(--duration-fast) hover:text-ink hover:decoration-ink-muted"
     >
       {seqLabel(row.seq)}
     </button>
@@ -105,7 +105,7 @@ export function LedgerTable({ rows, tearAfter, freshAfter, followChains = true, 
         <colgroup>
           <col className="w-14" />
           <col className="w-16" />
-          <col className="w-24" />
+          <col className="w-28" />
           <col />
           <col className="w-14" />
           <col className="w-26" />
@@ -135,7 +135,7 @@ export function LedgerTable({ rows, tearAfter, freshAfter, followChains = true, 
                 <td className="num border-b border-divider px-3 py-2 text-body-sm text-ink-secondary">
                   <When row={row} />
                 </td>
-                <td className={cx("border-b border-divider px-3 py-2 text-body-sm", KIND_CLASS[kindTone(row.kind)])}>{row.kind_label}</td>
+                <td className={cx("border-b border-divider px-3 py-2 text-body-sm whitespace-nowrap", KIND_CLASS[kindTone(row.kind)])}>{row.kind_label}</td>
                 <td colSpan={hasNumbers(row) ? 1 : 4} className="border-b border-divider px-3 py-2 text-body-sm">
                   <StockName row={row} />
                   <span className={cx("num text-ink-secondary", row.name ? "ml-2" : "text-ink")}>{summaryText(row)}</span>
@@ -166,10 +166,11 @@ export function LedgerTable({ rows, tearAfter, freshAfter, followChains = true, 
             {showTear && i === tearAt && tear}
             <div className={cx("border-b border-divider px-4 py-3", justIn(row) && "row-new")}>
               <div className="flex items-baseline justify-between gap-3">
-                <p className="min-w-0 truncate text-body-sm">
+                <p className="min-w-0 text-body-sm">
                   <span className={KIND_CLASS[kindTone(row.kind)]}>{row.kind_label}</span> <StockName row={row} />
                 </p>
-                <span className="num shrink-0 text-body-sm font-semibold text-ink">{amountText(row)}</span>
+                {/* 체결된 줄의 금액만 잉크로 굵게. 아직 일어나지 않은 계획의 금액은 보통 굵기(넓은 화면의 표와 같다) */}
+                <span className={cx("num shrink-0 text-body-sm", isFill(row) ? "font-semibold text-ink" : "text-ink-secondary")}>{amountText(row)}</span>
               </div>
               <p className="num mt-1 text-body-sm text-ink-secondary">
                 {summaryText(row)}
@@ -218,12 +219,13 @@ function ChainDialog({ chainId, onClose }: { chainId: string | null; onClose: ()
         <p className="text-body-sm text-ink-secondary">이 번호로 묶인 다른 기록이 없습니다.</p>
       ) : (
         <>
-          <div className="-mx-5 border-y border-divider">
+          {/* 대화상자 안쪽 여백(p-6)만큼 넓혀 줄 구분선이 가장자리까지 닿게 한다 */}
+          <div className="-mx-6 border-y border-divider">
             <LedgerTable rows={chain.data.rows} followChains={false} layout="list" />
           </div>
           {chain.data.decision_id && (
-            <Link to={`/committee/${chain.data.decision_id}`} onClick={onClose} className="mt-2 inline-flex min-h-11 items-center gap-1 text-body-sm font-semibold text-ink">
-              위원 의견과 리스크 점검까지 모두 보기
+            <Link to={`/committee/${chain.data.decision_id}`} onClick={onClose} className="mt-2 inline-flex min-h-11 items-center gap-1 text-body-sm font-semibold text-accent hover:text-accent-hover">
+              판단 근거 보기(위원 의견·리스크 점검)
               <ArrowRight aria-hidden className="size-4" />
             </Link>
           )}
@@ -301,11 +303,11 @@ export function Passbook({ book, className }: { book: Dashboard["passbook"]; cla
         </Button>
       </header>
       {quiet > 0 && (
-        <p className="num flex flex-wrap items-center justify-between gap-x-3 border-b border-divider px-4 text-body-sm text-ink-secondary">
+        <p className="num flex flex-wrap items-center justify-between gap-x-3 border-b border-divider px-4 py-1 text-body-sm text-ink-secondary">
           <span>{showQuiet ? `심의 전에 걸러진 후보 ${num(quiet)}건도 함께 보는 중입니다` : `심의 전에 걸러진 후보 ${num(quiet)}건은 접어 두었습니다`}</span>
-          <button type="button" aria-pressed={showQuiet} onClick={() => setShowQuiet((v) => !v)} className="min-h-11 font-semibold text-ink underline underline-offset-2">
+          <Button size="sm" variant="ghost" aria-pressed={showQuiet} onClick={() => setShowQuiet((v) => !v)} className="-mr-3">
             {showQuiet ? "접기" : "펼쳐 보기"}
-          </button>
+          </Button>
         </p>
       )}
       {all.length === 0 ? (
@@ -315,16 +317,17 @@ export function Passbook({ book, className }: { book: Dashboard["passbook"]; cla
       ) : (
         <>
           <LedgerTable rows={rows} tearAfter={tearInView ? book.seen_seq : undefined} freshAfter={freshAfter} />
-          <div className="flex flex-wrap items-center justify-between gap-x-4 px-4 py-1">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 px-4 py-2">
             {filtered.length > limit ? (
-              <button type="button" onClick={() => setLimit(filtered.length)} className="num min-h-11 text-body-sm font-semibold text-ink underline underline-offset-2">
+              <Button size="sm" variant="ghost" onClick={() => setLimit(filtered.length)} className="num -ml-3">
                 나머지 {num(filtered.length - limit)}줄 더 보기
-              </button>
+              </Button>
             ) : (
               <span />
             )}
-            <Link to="/portfolio?tab=ledger" className="inline-flex min-h-11 items-center text-body-sm font-semibold text-ink-secondary">
+            <Link to="/portfolio?tab=ledger" className="inline-flex min-h-11 items-center gap-1 text-body-sm font-semibold text-accent hover:text-accent-hover">
               장부 전체 보기
+              <ArrowRight aria-hidden className="size-4" />
             </Link>
           </div>
         </>

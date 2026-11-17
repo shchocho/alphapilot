@@ -8,6 +8,7 @@ import { dayLabel, labelOf, num } from "@/lib/format";
 import { CONVICTION, entryText, INTENT_STATUS, INTENT_TONE } from "@/lib/labels";
 import { useDecision } from "@/lib/queries";
 import type { TranscriptStep } from "@/lib/types";
+import { SingleApproval } from "../auto/ApprovalCard";
 import { LedgerTable } from "../dashboard/Passbook";
 import { ActionBadge, FinalCard, GateSteps, SeatList, sourceLabel, TechniqueChecks } from "./parts";
 
@@ -119,7 +120,9 @@ export default function DecisionPage() {
             </Panel>
           )}
 
-          {d.intent && (
+          {d.intent?.status === "pending_approval" && <SingleApproval card={d.intent} showDecisionLink={false} />}
+
+          {d.intent && d.intent.status !== "pending_approval" && (
             <section className="rounded-lg border border-divider bg-accent-subtle p-4" aria-label="이 판단으로 만든 주문 계획">
               <p className="flex flex-wrap items-center gap-2 text-body-sm">
                 <Badge tone={INTENT_TONE[d.intent.status] ?? "accent"}>

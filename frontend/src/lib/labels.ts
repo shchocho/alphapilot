@@ -6,9 +6,11 @@ import type { IntentCard, Plan, PositionRow } from "./types";
 
 export const CONVICTION: Record<string, string> = { very_low: "매우 낮음", low: "낮음", medium: "보통", high: "높음", very_high: "매우 높음" };
 
+// "actionable"은 관문 기법(트렌드 템플릿)에도 붙는다. 관문은 매수 계획을 만들지 않으므로 "매수"라고 적지 않는다.
+// "setup"은 조건은 갖췄고 돌파(장중 가격·피벗)를 기다리는 상태다(변동성 돌파, VCP).
 export const TECH_STATE: Record<string, string> = {
-  actionable: "매수 조건 충족",
-  setup: "준비 단계",
+  actionable: "조건 충족",
+  setup: "돌파 대기",
   extended: "이미 오른 구간",
   none: "해당 없음",
   insufficient: "자료 부족",
@@ -40,9 +42,59 @@ export const INTENT_TONE: Record<string, Tone> = {
 };
 
 export const STANCE: Record<string, string> = { bullish: "긍정", bearish: "부정", neutral: "중립", abstain: "기권" };
-export const STANCE_TONE: Record<string, Tone> = { bullish: "success", bearish: "danger", neutral: "neutral", abstain: "neutral" };
+// 의견은 상태도 가격도 아니라서 색을 쓰지 않는다. 위험 빨강을 쓰면 바로 옆 '매수'(상승 빨강) 배지와 뜻이 섞인다.
+// 방향은 단어(긍정·부정)와 부호(+0.71 / −0.20), 막대가 뻗는 쪽이 전한다.
+export const STANCE_TONE: Record<string, Tone> = { bullish: "neutral", bearish: "neutral", neutral: "outline", abstain: "outline" };
 
 export const GATE_OUTCOME: Record<string, string> = { pass: "통과", reduce: "축소", block: "거부", note: "참고" };
+
+/**
+ * 기법 점검 값. 기준에 %가 있으면 서버가 값을 퍼센트 단위로 준다(예: 187.3 = +187.3%). 기준처럼 %와 부호를 붙여
+ * "187.30 · 기준 ≥ +25%"가 아니라 "+187.3% · 기준 ≥ +25%"로 읽히게 한다. 음수는 진짜 빼기 기호(−)로 적는다.
+ */
+export function checkValueText(value: number | string | null, threshold: string): string {
+  if (value === null) return "자료 없음";
+  if (typeof value === "string") return value;
+  const minus = value < 0 ? "−" : "";
+  if (threshold.includes("%")) {
+    const sign = !/[+−-]/.test(threshold) ? (value < 0 ? "−" : "") : value > 0 ? "+" : minus;
+    return `${sign}${Math.abs(value).toFixed(1)}%`;
+  }
+  if (Math.abs(value) >= 1000) return `${minus}${num(Math.abs(value))}`;
+  return `${minus}${Number.isInteger(value) ? Math.abs(value) : Math.abs(value).toFixed(2)}`;
+}
+
+/** 리스크 점검 규칙(서버 backend/app/risk/gate.py의 키). 이름은 설정 화면의 한도 이름과 맞춘다. */
+export const GATE_RULE: Record<string, string> = {
+  action: "판단 결론",
+  decision_status: "판단 상태",
+  circuit_breaker: "손실 차단",
+  market_regime: "시장 국면",
+  stock_flags: "매매 제한 종목",
+  already_held: "이미 보유",
+  duplicate: "중복 계획",
+  max_positions: "최대 보유 종목 수",
+  max_orders: "하루 최대 주문 수",
+  conviction: "매수에 필요한 최소 확신",
+  liquidity_floor: "하루 평균 거래대금 하한",
+  stop_adjust: "손절 가격 조정",
+  stop_invalid: "손절 가격 확인",
+  max_stop: "손절 폭 상한",
+  cost_to_risk: "비용 ÷ 위험 상한",
+  reward_to_risk: "최소 손익비",
+  costs: "거래 비용",
+  risk_budget: "한 건에 거는 위험",
+  max_position: "한 종목 최대 비중",
+  max_order_value: "주문 한 건 최대 금액",
+  liquidity: "주문 ÷ 하루 거래대금 상한",
+  max_sector: "한 업종 최대 비중",
+  max_heat: "손절 시 총손실 상한",
+  exposure_cap: "시장 국면 투자 비중 상한",
+  cash: "남겨 둘 현금",
+  zero_qty: "살 수 있는 수량",
+  not_held: "보유 확인",
+  sell: "매도 수량",
+};
 export const GATE_TONE: Record<string, Tone> = { pass: "success", reduce: "warning", block: "danger", note: "neutral" };
 
 /** 장부 적요의 색: 계획은 보라, 보호 청산은 주의, 거부·차단·오류는 위험, 체결은 굵은 먹색. */

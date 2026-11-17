@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { arrow, clock, dayDots, dayLabel, dayShort, direction, labelOf, duration, num, pct, seqLabel, won, wonAbout, wonExact, wonShort, wonSigned } from "./format";
+import { arrow, clock, dayDots, dayLabel, dayShort, deadlineText, direction, labelOf, duration, num, pct, seqLabel, won, wonAbout, wonExact, wonShort, wonSigned } from "./format";
 
 describe("금액", () => {
   it("천 단위 쉼표와 원을 붙인다", () => {
@@ -82,5 +82,15 @@ describe("축 눈금용 금액(wonExact): 줄여 쓰되 반올림하지 않는�
     expect(wonExact(12_345)).toBe("12,345원");
     expect(wonExact(-500_000)).toBe("−50만 원");
     expect(wonExact(2_500)).toBe("2,500원");
+  });
+});
+
+describe("승인 기한", () => {
+  it("날짜와 시각을 함께 적는다", () => {
+    expect(deadlineText("2026-10-06T15:20:00+09:00")).toBe("10월 6일 15:20");
+  });
+  it("시각이 없으면 날짜만, 값이 없으면 빈 글자", () => {
+    expect(deadlineText("2026-10-06")).toBe("10월 6일");
+    expect(deadlineText(null)).toBe("");
   });
 });

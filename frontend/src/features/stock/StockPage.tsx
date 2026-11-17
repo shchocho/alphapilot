@@ -9,6 +9,7 @@ import { dayDots, dayLabel, labelOf, num, pct, wonShort, wonSigned } from "@/lib
 import { DATA_SOURCE, entryText, EXIT_RULE, exitPlanText, heldText, INTENT_STATUS, INTENT_TONE } from "@/lib/labels";
 import { useStock } from "@/lib/queries";
 import type { StockDetail } from "@/lib/types";
+import { SingleApproval } from "../auto/ApprovalCard";
 import { FinalCard, SeatList, TechniqueChecks } from "../committee/parts";
 import { CandleChart, type PriceLine } from "./CandleChart";
 
@@ -23,6 +24,7 @@ export default function StockPage() {
 }
 
 function StockView({ s }: { s: StockDetail }) {
+  const pending = s.intents.filter((intent) => intent.status === "pending_approval");
   const actionable = s.techniques.find((t) => t.passed && t.plan);
   const lines = useMemo<PriceLine[]>(() => {
     if (s.position) {
@@ -68,6 +70,15 @@ function StockView({ s }: { s: StockDetail }) {
           </p>
         </div>
       </div>
+
+      {/* 좁은 화면에서는 오른쪽 열이 차트·점검표 아래로 내려가 승인 대기 계획이 2,000px 아래에 묻힌다. 그래서 차트 위에 따로 둔다. */}
+      {pending.length > 0 && (
+        <div className="grid gap-3 md:grid-cols-2 xl:hidden">
+          {pending.map((intent) => (
+            <SingleApproval key={intent.id} card={intent} />
+          ))}
+        </div>
+      )}
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_calc(var(--spacing)*96)]">
         <div className="min-w-0 space-y-4">
@@ -139,25 +150,24 @@ function StockView({ s }: { s: StockDetail }) {
         </div>
 
         <div className="min-w-0 space-y-4">
-          {s.intents.map((intent) => (
-            <section key={intent.id} className="rounded-lg border border-divider bg-accent-subtle p-4" aria-label="이 종목의 주문 계획">
-              <p className="flex flex-wrap items-center gap-2 text-body-sm">
-                <Badge tone={INTENT_TONE[intent.status] ?? "accent"}>
-                  {labelOf(INTENT_STATUS, intent.status)}
-                </Badge>
-                <span className="num font-semibold text-ink">
-                  {intent.side === "buy" ? "매수" : "매도"} {num(intent.qty)}주 · {dayLabel(intent.trade_date)}
-                </span>
-              </p>
-              <p className="num mt-1 text-body-sm text-ink-secondary">{entryText(intent)}</p>
-              {intent.status === "pending_approval" && (
-                <Link to="/auto" className="mt-1 inline-flex min-h-11 items-center gap-1 text-body-sm font-semibold text-accent">
-                  승인하러 가기
-                  <ArrowRight aria-hidden className="size-4" />
-                </Link>
-              )}
-            </section>
+          {pending.map((intent) => (
+            <div key={intent.id} className="hidden xl:block">
+              <SingleApproval card={intent} />
+            </div>
           ))}
+          {s.intents
+            .filter((intent) => intent.status !== "pending_approval")
+            .map((intent) => (
+              <section key={intent.id} className="rounded-lg border border-divider bg-accent-subtle p-4" aria-label="이 종목의 주문 계획">
+                <p className="flex flex-wrap items-center gap-2 text-body-sm">
+                  <Badge tone={INTENT_TONE[intent.status] ?? "accent"}>{labelOf(INTENT_STATUS, intent.status)}</Badge>
+                  <span className="num font-semibold text-ink">
+                    {intent.side === "buy" ? "매수" : "매도"} {num(intent.qty)}주 · {dayLabel(intent.trade_date)}
+                  </span>
+                </p>
+                <p className="num mt-1 text-body-sm text-ink-secondary">{entryText(intent)}</p>
+              </section>
+            ))}
 
           {s.position && (
             <Panel title="보유 중">
@@ -186,8 +196,8 @@ function StockView({ s }: { s: StockDetail }) {
             title="최근 위원회 판단"
             actions={
               s.decision && (
-                <Link to={`/committee/${s.decision.id}`} className="inline-flex min-h-11 items-center gap-1 text-body-sm font-semibold text-ink-secondary">
-                  전체 보기
+                <Link to={`/committee/${s.decision.id}`} className="inline-flex min-h-11 items-center gap-1 text-body-sm font-semibold text-accent hover:text-accent-hover">
+                  판단 근거 보기
                   <ArrowRight aria-hidden className="size-4" />
                 </Link>
               )

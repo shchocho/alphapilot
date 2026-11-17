@@ -1,14 +1,14 @@
 /** 승인 대기 카드. 아직 일어나지 않은 계획이라 보라색 잉크로 적는다. 단추 이름에 결과(수량·금액)를 그대로 쓴다. */
 
-import { ArrowRight, Check, X } from "lucide-react";
+import { ArrowRight, Check, CircleAlert, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { Badge, Button, cx } from "@/components/ui";
-import { api } from "@/lib/api";
-import { dayLabel, labelOf, num, pct, wonAbout } from "@/lib/format";
+import { api, ApiError, errorMessage } from "@/lib/api";
+import { dayLabel, deadlineText, labelOf, num, pct, wonAbout } from "@/lib/format";
 import { CONVICTION, entryText } from "@/lib/labels";
-import { notifyError, refreshAll } from "@/lib/queries";
+import { refreshAll } from "@/lib/queries";
 import type { IntentCard, Votes } from "@/lib/types";
 
 export function votesText(votes: Votes | undefined): string {
@@ -50,21 +50,36 @@ interface Props {
   card: IntentCard;
   outcome?: Outcome;
   onDecided?: (id: string, outcome: Outcome) => void;
+  /** 판단 상세 화면처럼 이미 그 판단을 보고 있는 곳에서는 "판단 근거 보기" 링크를 뺀다. */
+  showDecisionLink?: boolean;
 }
 
-export function ApprovalCard({ card, outcome, onDecided }: Props) {
+/** 계획 하나만 보이는 곳(종목 상세, 판단 상세)에서 바로 결정하는 카드. 결정한 뒤에도 그 자리에 결과를 남긴다. */
+export function SingleApproval({ card, showDecisionLink = true }: { card: IntentCard; showDecisionLink?: boolean }) {
+  const [outcome, setOutcome] = useState<Outcome | undefined>(undefined);
+  return <ApprovalCard card={card} outcome={outcome} onDecided={(_, next) => setOutcome(next)} showDecisionLink={showDecisionLink} />;
+}
+
+export function ApprovalCard({ card, outcome, onDecided, showDecisionLink = true }: Props) {
   const [busy, setBusy] = useState<"approve" | "reject" | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const sideWord = card.side === "buy" ? "매수" : "매도";
   const amount = card.amount ?? card.qty * card.est_price;
 
   const decide = async (approve: boolean) => {
     setBusy(approve ? "approve" : "reject");
+    setError(null);
     try {
       await api.post(`/api/intents/${card.id}/decide`, { approve, note: "" });
       onDecided?.(card.id, approve ? "approved" : "rejected");
       toast.success(approve ? `${card.name} ${sideWord} 계획을 승인했습니다. ${dayLabel(card.trade_date)}에 주문이 나갑니다` : `${card.name} ${sideWord} 계획을 거절했습니다`);
     } catch (e) {
-      notifyError(e);
+      // 실패는 사라지는 알림 대신 카드 안에 남긴다(가격이 허용 폭을 넘었다 등, 다시 누르기 전에 읽어야 한다)
+      if (!(e instanceof ApiError && e.code === "cancelled")) {
+        // 무엇을 못 했는지 + 서버가 준 이유(마침표는 하나만)
+        const why = errorMessage(e).trim().replace(/\.+$/, "");
+        setError(`${approve ? "승인" : "거절"}하지 못했습니다. ${why}.`);
+      }
     } finally {
       setBusy(null);
       refreshAll();
@@ -72,7 +87,9 @@ export function ApprovalCard({ card, outcome, onDecided }: Props) {
   };
 
   const votes = votesText(card.votes);
-  const rows: [string, React.ReactNode][] = [["예상 가격", `${num(card.est_price)}원`]];
+  const rows: [string, React.ReactNode][] = [];
+  if (card.expires_at) rows.push(["승인 기한", deadlineText(card.expires_at)]);
+  rows.push(["예상 가격", `${num(card.est_price)}원`]);
   if (card.stop) rows.push(["손절 가격", <>{num(card.stop)}원{card.risk_pct ? <span className="font-normal text-ink-secondary"> ({pct(-card.risk_pct, 1)})</span> : null}</>]);
   if (card.target) rows.push(["목표 가격", `${num(card.target)}원`]);
   if (card.technique_name) rows.push(["기법", card.technique_name]);
@@ -144,9 +161,15 @@ export function ApprovalCard({ card, outcome, onDecided }: Props) {
               거절
             </Button>
           </div>
+          {error && (
+            <p role="alert" className="mt-2 flex items-start gap-1 text-label text-danger">
+              <CircleAlert aria-hidden className="mt-px size-4 shrink-0" />
+              <span>{error} 계획 내용을 다시 확인한 뒤 누르세요.</span>
+            </p>
+          )}
         </>
       )}
-      {card.decision_id && (
+      {card.decision_id && showDecisionLink && (
         <Link to={`/committee/${card.decision_id}`} className={cx("mt-2 inline-flex min-h-11 items-center gap-1 text-body-sm font-semibold", outcome ? "text-ink-secondary" : "text-accent")}>
           판단 근거 보기
           <ArrowRight aria-hidden className="size-4" />

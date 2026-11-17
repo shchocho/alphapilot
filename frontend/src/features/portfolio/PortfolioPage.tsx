@@ -155,7 +155,9 @@ function Positions({ rows, equity }: { rows: PositionRow[]; equity: number }) {
 
 // ── 주문 계획 ───────────────────────────────────────────────────────────
 
-function Orders({ rows }: { rows: IntentCard[] }) {
+function Orders({ rows: raw }: { rows: IntentCard[] }) {
+  // 서버는 만든 시각 순으로 준다. 시뮬레이션을 몰아서 돌리면 만든 시각과 주문일이 어긋나므로, 표의 '주문일' 순(최근 먼저)으로 다시 놓는다.
+  const rows = [...raw].sort((a, b) => b.trade_date.localeCompare(a.trade_date));
   if (rows.length === 0) {
     return (
       <Panel>
@@ -164,53 +166,75 @@ function Orders({ rows }: { rows: IntentCard[] }) {
     );
   }
   return (
-    <Panel bodyClassName="overflow-x-auto">
-      <table className="w-full min-w-160">
-        <thead>
-          <tr>
-            <th scope="col" className={TH}>
-              주문일
-            </th>
-            <th scope="col" className={TH}>
-              종목
-            </th>
-            <th scope="col" className={TH}>
-              계획
-            </th>
-            <th scope="col" className={THR}>
-              수량
-            </th>
-            <th scope="col" className={THR}>
-              예상 가격
-            </th>
-            <th scope="col" className={TH}>
-              상태
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.id} className="align-top">
-              <td className={cx(TD, "num whitespace-nowrap")}>{dayDots(r.trade_date)}</td>
-              <td className={TD}>
-                <Link to={`/stocks/${r.code}`} className="font-semibold text-ink no-underline hover:underline">
-                  {r.name}
-                </Link>
-                {r.technique_name && <span className="block text-label text-ink-muted">{r.technique_name}</span>}
-              </td>
-              <td className={cx(TD, "num text-ink-secondary")}>
-                <span className="font-semibold text-ink">{r.side === "buy" ? "매수" : "매도"}</span> · {entryText(r)}
-                {r.note && <span className="block text-label text-ink-muted">{r.note}</span>}
-              </td>
-              <td className={TDR}>{num(r.qty)}</td>
-              <td className={TDR}>{num(r.est_price)}</td>
-              <td className={cx(TD, "whitespace-nowrap")}>
-                <Badge tone={INTENT_TONE[r.status] ?? "neutral"}>{labelOf(INTENT_STATUS, r.status)}</Badge>
-              </td>
+    <Panel bodyClassName="">
+      <div className="hidden overflow-x-auto lg:block">
+        <table className="w-full min-w-160">
+          <thead>
+            <tr>
+              <th scope="col" className={TH}>
+                주문일
+              </th>
+              <th scope="col" className={TH}>
+                종목
+              </th>
+              <th scope="col" className={TH}>
+                계획
+              </th>
+              <th scope="col" className={THR}>
+                수량
+              </th>
+              <th scope="col" className={THR}>
+                예상 가격
+              </th>
+              <th scope="col" className={TH}>
+                상태
+              </th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.id} className="align-top">
+                <td className={cx(TD, "num whitespace-nowrap")}>{dayDots(r.trade_date)}</td>
+                <td className={TD}>
+                  <Link to={`/stocks/${r.code}`} className="font-semibold text-ink no-underline hover:underline">
+                    {r.name}
+                  </Link>
+                  {r.technique_name && <span className="block text-label text-ink-muted">{r.technique_name}</span>}
+                </td>
+                <td className={cx(TD, "num text-ink-secondary")}>
+                  <span className="font-semibold text-ink">{r.side === "buy" ? "매수" : "매도"}</span> · {entryText(r)}
+                  {r.note && <span className="block text-label text-ink-muted">{r.note}</span>}
+                </td>
+                <td className={TDR}>{num(r.qty)}</td>
+                <td className={TDR}>{num(r.est_price)}</td>
+                <td className={cx(TD, "whitespace-nowrap")}>
+                  <Badge tone={INTENT_TONE[r.status] ?? "neutral"}>{labelOf(INTENT_STATUS, r.status)}</Badge>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {/* 좁은 화면: 표 대신 두 줄 목록(상태가 화면 밖으로 밀리지 않게) */}
+      <ul className="lg:hidden">
+        {rows.map((r) => (
+          <li key={r.id} className="border-b border-divider px-4 py-3 last:border-b-0">
+            <div className="flex items-center justify-between gap-3">
+              <Link to={`/stocks/${r.code}`} className="min-w-0 truncate text-h6 font-semibold text-ink no-underline">
+                {r.name}
+              </Link>
+              <Badge tone={INTENT_TONE[r.status] ?? "neutral"}>{labelOf(INTENT_STATUS, r.status)}</Badge>
+            </div>
+            <p className="num mt-1 text-body-sm text-ink-secondary">
+              <span className="font-semibold text-ink">{r.side === "buy" ? "매수" : "매도"}</span> {num(r.qty)}주 · 예상 {num(r.est_price)}원 · {dayDots(r.trade_date)}
+            </p>
+            <p className="num mt-1 text-label text-ink-muted">
+              {entryText(r)}
+              {r.note && <> · {r.note}</>}
+            </p>
+          </li>
+        ))}
+      </ul>
     </Panel>
   );
 }
@@ -226,54 +250,79 @@ function Trades({ rows }: { rows: Trade[] }) {
     );
   }
   return (
-    <Panel bodyClassName="overflow-x-auto">
-      <table className="w-full min-w-176">
-        <thead>
-          <tr>
-            <th scope="col" className={TH}>
-              날짜
-            </th>
-            <th scope="col" className={TH}>
-              종목
-            </th>
-            <th scope="col" className={TH}>
-              구분
-            </th>
-            {["수량", "가격", "금액", "수수료·세금", "손익"].map((h) => (
-              <th key={h} scope="col" className={THR}>
-                {h}
+    <Panel bodyClassName="">
+      <div className="hidden overflow-x-auto lg:block">
+        <table className="w-full min-w-176">
+          <thead>
+            <tr>
+              <th scope="col" className={TH}>
+                날짜
               </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((t) => (
-            <tr key={t.id}>
-              <td className={cx(TD, "num whitespace-nowrap")}>{dayDots(t.day)}</td>
-              <td className={TD}>
-                <Link to={`/stocks/${t.code}`} className="font-semibold text-ink no-underline hover:underline">
-                  {t.name}
-                </Link>
-              </td>
-              <td className={cx(TD, "whitespace-nowrap")}>{t.reason_label ?? (t.side === "buy" ? "매수" : "매도")}</td>
-              <td className={TDR}>{num(t.qty)}</td>
-              <td className={TDR}>{num(t.price)}</td>
-              <td className={TDR}>{num(t.amount)}</td>
-              <td className={TDR}>{num(t.fee + t.tax)}</td>
-              <td className={TDR}>
-                {t.pnl !== null ? (
-                  <Delta value={t.pnl}>
-                    {wonSigned(t.pnl)}
-                    {t.pnl_pct !== null && <> ({pct(t.pnl_pct, 1)})</>}
-                  </Delta>
-                ) : (
-                  ""
-                )}
-              </td>
+              <th scope="col" className={TH}>
+                종목
+              </th>
+              <th scope="col" className={TH}>
+                구분
+              </th>
+              {["수량", "가격", "금액", "수수료·세금", "손익"].map((h) => (
+                <th key={h} scope="col" className={THR}>
+                  {h}
+                </th>
+              ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((t) => (
+              <tr key={t.id}>
+                <td className={cx(TD, "num whitespace-nowrap")}>{dayDots(t.day)}</td>
+                <td className={TD}>
+                  <Link to={`/stocks/${t.code}`} className="font-semibold text-ink no-underline hover:underline">
+                    {t.name}
+                  </Link>
+                </td>
+                <td className={cx(TD, "whitespace-nowrap")}>{t.reason_label ?? (t.side === "buy" ? "매수" : "매도")}</td>
+                <td className={TDR}>{num(t.qty)}</td>
+                <td className={TDR}>{num(t.price)}</td>
+                <td className={TDR}>{num(t.amount)}</td>
+                <td className={TDR}>{num(t.fee + t.tax)}</td>
+                <td className={TDR}>
+                  {t.pnl !== null ? (
+                    <Delta value={t.pnl}>
+                      {wonSigned(t.pnl)}
+                      {t.pnl_pct !== null && <> ({pct(t.pnl_pct, 1)})</>}
+                    </Delta>
+                  ) : (
+                    ""
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <ul className="lg:hidden">
+        {rows.map((t) => (
+          <li key={t.id} className="border-b border-divider px-4 py-3 last:border-b-0">
+            <div className="flex items-baseline justify-between gap-3">
+              <Link to={`/stocks/${t.code}`} className="min-w-0 truncate text-h6 font-semibold text-ink no-underline">
+                {t.name}
+              </Link>
+              {t.pnl !== null && (
+                <Delta value={t.pnl} className="text-body-sm font-semibold">
+                  {wonSigned(t.pnl)}
+                  {t.pnl_pct !== null && <> ({pct(t.pnl_pct, 1)})</>}
+                </Delta>
+              )}
+            </div>
+            <p className="num mt-1 text-body-sm text-ink-secondary">
+              {t.reason_label ?? (t.side === "buy" ? "매수" : "매도")} · {num(t.qty)}주 · {num(t.price)}원 · {dayDots(t.day)}
+            </p>
+            <p className="num mt-1 text-label text-ink-muted">
+              금액 {num(t.amount)} · 수수료·세금 {num(t.fee + t.tax)}
+            </p>
+          </li>
+        ))}
+      </ul>
     </Panel>
   );
 }
@@ -291,39 +340,81 @@ function Journal({ p }: { p: Portfolio }) {
           <PnlBars data={p.daily_pnl.map((d) => ({ d: d.d, value: d.pnl }))} format={(v) => wonSigned(v)} tickFormat={(v) => wonExact(v)} label={`날짜별 실현 손익. ${p.daily_pnl.length}일 가운데 이익 본 날 ${p.daily_pnl.filter((d) => d.pnl > 0).length}일.`} />
         )}
       </Panel>
-      <Panel title="매수에서 매도까지" bodyClassName={rows.length === 0 ? undefined : "overflow-x-auto"}>
+      <Panel title="매수에서 매도까지" bodyClassName={rows.length === 0 ? undefined : ""}>
         {rows.length === 0 ? (
           <Empty title="아직 끝난 거래가 없습니다">한 종목을 사서 팔 때까지를 한 줄로 묶어 보여줍니다.</Empty>
         ) : (
-          <table className="w-full min-w-176">
-            <thead>
-              <tr>
-                <th scope="col" className={TH}>
-                  종목
-                </th>
-                <th scope="col" className={TH}>
-                  매수
-                </th>
-                <th scope="col" className={TH}>
-                  매도
-                </th>
-                <th scope="col" className={THR}>
-                  보유
-                </th>
-                <th scope="col" className={THR}>
-                  손익
-                </th>
-              </tr>
-            </thead>
-            <tbody>
+          <>
+            <div className="hidden overflow-x-auto lg:block">
+              <table className="w-full min-w-176">
+                <thead>
+                  <tr>
+                    <th scope="col" className={TH}>
+                      종목
+                    </th>
+                    <th scope="col" className={TH}>
+                      매수
+                    </th>
+                    <th scope="col" className={TH}>
+                      매도
+                    </th>
+                    <th scope="col" className={THR}>
+                      보유
+                    </th>
+                    <th scope="col" className={THR}>
+                      손익
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((j) => (
+                    <JournalRow key={`${j.chain_id}-${j.buy?.id}`} j={j} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <ul className="lg:hidden">
               {rows.map((j) => (
-                <JournalRow key={`${j.chain_id}-${j.buy?.id}`} j={j} />
+                <JournalItem key={`${j.chain_id}-${j.buy?.id}`} j={j} />
               ))}
-            </tbody>
-          </table>
+            </ul>
+          </>
         )}
       </Panel>
     </div>
+  );
+}
+
+/** 좁은 화면의 매매일지 한 건: 종목과 손익, 그 아래 매수·매도 줄. */
+function JournalItem({ j }: { j: JournalEntry }) {
+  return (
+    <li className="border-b border-divider px-4 py-3 last:border-b-0">
+      <div className="flex items-baseline justify-between gap-3">
+        <Link to={`/stocks/${j.code}`} className="min-w-0 truncate text-h6 font-semibold text-ink no-underline">
+          {j.name}
+        </Link>
+        {j.sell && j.sell.pnl !== null ? (
+          <Delta value={j.sell.pnl} className="text-body-sm font-semibold">
+            {wonSigned(j.sell.pnl)}
+            {j.sell.pnl_pct !== null && <> ({pct(j.sell.pnl_pct, 1)})</>}
+          </Delta>
+        ) : (
+          !j.sell && <Badge tone="neutral">보유 중</Badge>
+        )}
+      </div>
+      {j.buy && (
+        <p className="num mt-1 text-body-sm text-ink-secondary">
+          매수 {dayDots(j.buy.day)} · {num(j.buy.qty)}주 · {num(j.buy.price)}원
+        </p>
+      )}
+      {j.sell && (
+        <p className="num text-body-sm text-ink-secondary">
+          매도 {dayDots(j.sell.day)} · {num(j.sell.price)}원 · {j.sell.reason_label}
+          {j.sell.hold_days !== null && j.sell.hold_days !== undefined && <> · {j.sell.hold_days}일 보유</>}
+        </p>
+      )}
+      {j.technique_name && <p className="mt-1 text-label text-ink-muted">{j.technique_name}</p>}
+    </li>
   );
 }
 
@@ -418,7 +509,7 @@ function Ledger() {
           <Button size="sm" busy={checking} icon={<ShieldCheck aria-hidden className="size-4" />} onClick={() => void verify()}>
             위변조 검사
           </Button>
-          <a href="/api/ledger/export.csv" download className="tap inline-flex h-8 items-center gap-1 rounded-md bg-secondary px-3 text-label font-semibold text-ink no-underline hover:bg-secondary">
+          <a href="/api/ledger/export.csv" download className="tap inline-flex h-8 items-center gap-1 rounded-md bg-secondary px-3 text-label font-semibold text-ink no-underline transition-[background-color,scale] duration-(--duration-fast) hover:bg-secondary-hover active:scale-98">
             <Download aria-hidden className="size-4" />
             CSV 내려받기
           </a>

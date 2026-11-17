@@ -4,7 +4,7 @@ import { ArrowDown, ArrowUp, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Sparkline } from "@/components/charts";
-import { Badge, cx, Delta, Empty, ErrorState, Notice, PageHeader, Panel, SkeletonRows, TextInput } from "@/components/ui";
+import { Badge, cx, Delta, Empty, ErrorState, PageHeader, Panel, SkeletonRows, Spinner, TextInput } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
 import { dayLabel, labelOf, num, pct, wonShort } from "@/lib/format";
 import { DATA_SOURCE, planText, TECH_STATE, TECH_STATE_TONE } from "@/lib/labels";
@@ -38,6 +38,9 @@ export default function DiscoverPage() {
   if (screener.isError) return <ErrorState message={errorMessage(screener.error)} onRetry={() => void screener.refetch()} />;
   const data = screener.data;
   const active = data.techniques.find((t) => t.key === data.technique) ?? data.techniques[0];
+  // 기법을 바꾸면 새 결과가 올 때까지 이전 결과를 흐리게 두고, 누른 단추는 바로 눌린 상태로 보인다.
+  const requested = params.get("t") ?? data.technique;
+  const switching = screener.isFetching && requested !== data.technique;
 
   const sortButton = (key: SortKey, label: string) => {
     const on = sort.key === key;
@@ -68,11 +71,11 @@ export default function DiscoverPage() {
           <button
             key={t.key}
             type="button"
-            aria-pressed={t.key === data.technique}
+            aria-pressed={t.key === requested}
             onClick={() => setParams({ t: t.key }, { replace: true })}
             className={cx(
               "tap num flex h-8 shrink-0 items-center gap-2 rounded-md border px-3 text-label whitespace-nowrap transition-colors duration-(--duration-fast)",
-              t.key === data.technique ? "border-ink bg-secondary font-semibold text-ink" : "border-border bg-surface font-medium text-ink-secondary hover:bg-secondary hover:text-ink",
+              t.key === requested ? "border-ink bg-secondary font-semibold text-ink" : "border-border bg-surface font-medium text-ink-secondary hover:bg-secondary hover:text-ink",
             )}
           >
             {t.name}
@@ -109,7 +112,20 @@ export default function DiscoverPage() {
         </section>
       )}
 
-      <Panel bodyClassName="" title={<span className="num">통과 종목 {rows.length}개</span>}>
+      <Panel
+        bodyClassName={cx("transition-opacity duration-(--duration-fast)", switching && "opacity-60")}
+        title={
+          <span className="num inline-flex items-center gap-2">
+            통과 종목 {rows.length}개
+            {switching && (
+              <span role="status" className="inline-flex items-center gap-1 text-body-sm font-normal text-ink-muted">
+                <Spinner />
+                새 결과를 불러오는 중
+              </span>
+            )}
+          </span>
+        }
+      >
         {rows.length === 0 ? (
           <Empty title="조건을 통과한 종목이 없습니다">{dayLabel(data.as_of)} 종가로는 이 기법의 조건을 모두 채운 종목이 없습니다. 다른 기법을 고르거나 다음 거래일을 기다리세요.</Empty>
         ) : (
@@ -214,7 +230,6 @@ export default function DiscoverPage() {
         살펴본 종목 {num(data.universe)}개 가운데 하루 평균 거래대금이 {wonShort(data.min_avg_value)}에 못 미치는 {num(data.excluded_illiquid)}개
         {data.no_bar > 0 && <>와 이날 봉이 없는 {num(data.no_bar)}개</>}는 뺐습니다. 자료: {DATA_SOURCE[data.data_source] ?? data.data_source}. 상대강도는 1년 수익률의 백분위(0~100)입니다.
       </p>
-      {screener.isFetching && <Notice>새 결과를 불러오는 중입니다.</Notice>}
     </div>
   );
 }
