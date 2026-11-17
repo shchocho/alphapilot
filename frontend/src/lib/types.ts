@@ -28,7 +28,7 @@ export interface Status {
   automation_level: number;
   automation_label: string;
   resume_check_required: boolean;
-  decider: "ai" | "rules";
+  decider: "ai" | "rules" | "hybrid";
   sim_day: string | null;
   data_day: string | null;
   data_source: string;
@@ -362,7 +362,7 @@ export interface DecisionDetail extends Omit<DecisionBrief, "thesis" | "votes" |
   max_qty: Record<string, number>;
   final: FinalDecision;
   gate: Gate | null;
-  transcript: { depth: string; model: string; steps: TranscriptStep[]; error: string; cost_usd: number } | null;
+  transcript: { depth: string; model: string; steps: TranscriptStep[]; error: string; cost_usd: number; branch?: { reason: string; outcome: string; adopted: boolean } } | null;
   intent: IntentCard | null;
   chain: LedgerRow[];
   market: string;
@@ -420,7 +420,7 @@ export interface Committee {
   decisions: DecisionBrief[];
   tally: Record<string, number>;
   cost_usd: number;
-  decider: "ai" | "rules";
+  decider: "ai" | "rules" | "hybrid";
   depth_label: string;
   scorecard: Record<"ai" | "rules", { closed: number; wins: number; win_rate: number | null; avg_pct: number | null; enough: boolean }>;
   seat_labels: Record<string, string>;
@@ -520,7 +520,7 @@ export interface EngineSettings {
   resume_check_required: boolean;
   automation_level: number;
   auto_max_order_value: number;
-  decider: "ai" | "rules";
+  decider: "ai" | "rules" | "hybrid";
   ai_model: string;
   ai_depth: "light" | "standard" | "deep";
   ai_effort: string;

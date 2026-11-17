@@ -18,6 +18,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.committee.deliberation import deliberate_entry, deliberate_holding
+from app.committee.escalation import entry_branch, holding_branch, second_opinion
 from app.committee.llm import AnthropicLlm, LlmClient, LlmError, LlmUsage
 from app.config import Settings
 from app.core import clock
@@ -528,6 +529,8 @@ class EngineService:
                               previous_day=market.calendar[t - 1] if t > 0 else None)
         if st.decider == "rules":
             entries, holds = rules_decisions(draft)
+        elif st.decider == "hybrid":
+            entries, holds = await self._branch_decisions(draft, st)
         else:
             entries, holds = await self._ai_decisions(draft, st)
         cycle = finalize_cycle(draft, entries, holds, portfolio, cfg, pending_codes=pending_codes)
@@ -612,6 +615,32 @@ class EngineService:
                 self.bus.publish("status")
                 decision, transcript = await deliberate_entry(cand.context, llm, budget, depth=st.ai_depth)
                 entries[cand.info.code] = (decision, transcript.to_dict())
+        finally:
+            closer = getattr(llm, "aclose", None)
+            if closer is not None:
+                await closer()
+        return entries, holds
+
+    async def _branch_decisions(self, draft: CycleDraft, st: EngineSettings) -> tuple[dict[str, tuple[Decision, dict | None]], dict[str, tuple[Decision, dict | None]]]:
+        """규칙으로 결론을 내고, 애매한 분기(committee/escalation.py)에서만 Claude에게 묻는다. AI를 못 쓰면 규칙 결론 그대로다."""
+        entries, holds = rules_decisions(draft)
+        asks = [(entries, c.info, c.context, why) for c in draft.candidates if (why := entry_branch(c.seats, entries[c.info.code][0]))]
+        asks += [(holds, h.info, h.context, why) for h in draft.holdings
+                 if h.info.code in holds and (why := holding_branch(h.seats, holds[h.info.code][0], h.pnl_pct))]
+        if not asks:
+            return entries, holds
+        try:
+            llm = self._make_llm(st)
+        except LlmError as exc:
+            self._log(st.env, Event("error", f"AI 분기 판단 {len(asks)}건을 건너뛰고 규칙 결론을 씁니다: {exc}"), day=draft.day)
+            return entries, holds
+        budget = BudgetGuard(self.sf, st.env, st.ai_daily_budget_usd)
+        try:
+            for table, info, context, why in asks:
+                self.busy = f"AI 분기 판단: {info.name}"
+                self.bus.publish("status")
+                decision, transcript = await second_opinion(context, table[info.code][0], why, llm, budget)
+                table[info.code] = (decision, transcript.to_dict())
         finally:
             closer = getattr(llm, "aclose", None)
             if closer is not None:

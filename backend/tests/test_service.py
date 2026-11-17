@@ -47,7 +47,7 @@ class FakeLlm:
         self.calls += 1
         if self.fail:
             raise self.fail
-        answer = {"bull": ARGUMENT, "bear": ARGUMENT, "risk": RISK_OK, "chair": self.final}[role]
+        answer = {"bull": ARGUMENT, "bear": ARGUMENT, "risk": RISK_OK, "chair": self.final, "branch": self.final}[role]
         return LlmResult(json.dumps(answer, ensure_ascii=False), LlmUsage(self.model, 2_000, 400))
 
 
@@ -273,6 +273,42 @@ async def test_ai_failure_blocks_buys(svc):
     await svc.advance(1)
     assert [r for r in intents(svc) if r.side == "buy"] == []
     assert all(not u.ok for u in rows(svc, AiUsageRow))
+
+
+# ── 규칙 + AI 분기 ────────────────────────────────────────────────────────────
+
+async def test_hybrid_mode_asks_claude_at_a_branch_and_applies_its_answer(svc, monkeypatch):
+    fake = FakeLlm(final={**FINAL_BUY, "action": "HOLD", "conviction": "low", "thesis": "AI 보류 근거"})
+    svc._llm_factory = lambda st: fake
+    monkeypatch.setattr(service_module, "entry_branch", lambda seats, rules: "테스트 분기" if rules.action == "BUY" else None)
+    svc.update_settings({"decider": "hybrid", "automation_level": 3})
+    await svc.advance(1)
+    flipped = [d for d in rows(svc, DecisionRow) if d.source == "ai"]
+    assert fake.calls == len(flipped) >= 1 and len(rows(svc, AiUsageRow)) == fake.calls  # 분기마다 한 번만 묻는다
+    assert [r for r in intents(svc) if r.side == "buy"] == []  # 규칙은 매수였지만 AI 답을 반영해 보류
+    assert all(d.action == "HOLD" and json.loads(d.body)["transcript"]["branch"]["adopted"] for d in flipped)
+    assert any("AI 분기 판단 · 테스트 분기" in r.summary for r in svc.ledger.rows(env="sim"))
+
+
+async def test_hybrid_mode_makes_no_calls_when_nothing_is_a_branch(svc, monkeypatch):
+    fake = FakeLlm()
+    svc._llm_factory = lambda st: fake
+    monkeypatch.setattr(service_module, "entry_branch", lambda seats, rules: None)
+    svc.update_settings({"decider": "hybrid", "automation_level": 3})
+    await svc.advance(1)
+    assert fake.calls == 0 and [r for r in intents(svc, statuses=("approved",)) if r.side == "buy"]
+
+
+@pytest.mark.parametrize("llm", [None, FakeLlm(fail=LlmError("timeout", "시간 초과"))], ids=["no_key", "timeout"])
+async def test_hybrid_mode_falls_back_to_the_rules_decision_when_claude_is_unavailable(svc, monkeypatch, llm):
+    svc._llm_factory = (lambda st: llm) if llm else None
+    monkeypatch.setattr(service_module, "entry_branch", lambda seats, rules: "테스트 분기")
+    svc.update_settings({"decider": "hybrid", "automation_level": 3})
+    await svc.advance(1)
+    assert [r for r in intents(svc, statuses=("approved",)) if r.side == "buy"]  # AI 없이도 규칙 결론대로 매수
+    assert all(d.source == "rules" for d in rows(svc, DecisionRow))
+    summaries = [r.summary for r in svc.ledger.rows(env="sim")]
+    assert any(("건너뛰고 규칙 결론" if llm is None else "AI 답을 받지 못해") in s for s in summaries)
 
 
 # ── 정지 제어 ─────────────────────────────────────────────────────────────────

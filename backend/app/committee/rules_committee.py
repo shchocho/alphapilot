@@ -30,20 +30,24 @@ def _sentence(seats: list[Signal], stance: str, limit: int = 3) -> str:
     return " · ".join(f"{s.label}: {s.summary}" for s in picked[:limit])
 
 
-def decide_entry(code: str, name: str, seats: list[Signal], technique_name: str) -> Decision:
-    score = blend(seats)
+def safety_hold(seats: list[Signal]) -> str | None:
+    """좌석 종합과 상관없이 매수를 막는 안전 규칙(리스크 거부권, 약세장). 해당하면 그 사유, 아니면 None."""
     risk = seat(seats, "risk")
     regime = seat(seats, "regime")
+    if risk is not None and not risk.abstained and risk.value <= RISK_VETO:
+        return f"리스크 좌석 거부권: {risk.summary}"
+    if regime is not None and regime.value < 0.0:
+        return f"시장 국면이 약해 새로 사지 않습니다: {regime.summary}"
+    return None
+
+
+def decide_entry(code: str, name: str, seats: list[Signal], technique_name: str) -> Decision:
+    score = blend(seats)
     tally = votes(seats)
-    veto = risk is not None and not risk.abstained and risk.value <= RISK_VETO
-    weak_market = regime is not None and regime.value < 0.0
     dissent = _sentence(seats, "bearish")
-    if veto:
-        return Decision(code, name, "entry", "HOLD", _conviction(score), thesis=f"리스크 좌석 거부권: {risk.summary}",
-                        dissent=dissent, source="rules", votes=tally)
-    if weak_market:
-        return Decision(code, name, "entry", "HOLD", _conviction(score), thesis=f"시장 국면이 약해 새로 사지 않습니다: {regime.summary}",
-                        dissent=dissent, source="rules", votes=tally)
+    blocked = safety_hold(seats)
+    if blocked is not None:
+        return Decision(code, name, "entry", "HOLD", _conviction(score), thesis=blocked, dissent=dissent, source="rules", votes=tally)
     if score >= BUY_THRESHOLD:
         return Decision(
             code, name, "entry", "BUY", _conviction(score),

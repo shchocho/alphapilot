@@ -366,6 +366,13 @@ def _intent_from_plan(cand: Candidate, draft: CycleDraft, qty: int, stop: int, d
     )
 
 
+def _branch_event(ev: list[Event], transcript: dict | None, info: StockInfo, chain: str) -> None:
+    branch = (transcript or {}).get("branch")
+    if branch:
+        ev.append(Event("decision", f"AI 분기 판단 · {branch['reason']} → {branch['outcome']}", info.code, info.name, chain,
+                        payload={"adopted": branch["adopted"]}))
+
+
 def _votes_text(votes: dict[str, int]) -> str:
     return f"좌석 강세 {votes.get('bullish', 0)} · 약세 {votes.get('bearish', 0)} · 중립 {votes.get('neutral', 0)}"
 
@@ -405,6 +412,7 @@ def finalize_cycle(
         record = DecisionRecord(f"{draft.day:%y%m%d}-{h.info.code}-h", chain, draft.day, h.info, "holding", decision, h.seats,
                                 h.techniques, transcript=transcript, close=h.close, technique=h.position.technique)
         result.records.append(record)
+        _branch_event(ev, transcript, h.info, chain)
         if decision.status != "ok":
             ev.append(Event("decision", f"보유 재심의 보류: {decision.status_detail} (보유 유지, 보호 청산은 계속 작동)", h.info.code, h.info.name, chain))
             continue
@@ -432,6 +440,7 @@ def finalize_cycle(
         record = DecisionRecord(f"{cand.chain_id}-e", cand.chain_id, draft.day, cand.info, "entry", decision, cand.seats, cand.techniques,
                                 plan=cand.plan, max_qty=cand.max_qty, transcript=transcript, close=cand.close, technique=cand.primary.key)
         result.records.append(record)
+        _branch_event(ev, transcript, cand.info, cand.chain_id)
         label = CONVICTION_LABEL[decision.conviction]
         if decision.status != "ok":
             ev.append(Event("decision", f"판단 보류: {decision.status_detail} → 매수하지 않음", cand.info.code, cand.info.name, cand.chain_id))

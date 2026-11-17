@@ -160,17 +160,25 @@ function DeciderPanel({ view }: { view: SettingsView }) {
         name="decider"
         disabled={busy}
         value={engine.decider}
-        onChange={(value) => void save({ decider: value }, value === "ai" ? "AI 위원회가 판단합니다" : "규칙 위원회가 판단합니다")}
+        onChange={(value) => void save({ decider: value }, value === "ai" ? "AI 위원회가 판단합니다" : value === "hybrid" ? "규칙이 판단하고 애매한 분기만 AI에게 묻습니다" : "규칙 위원회가 판단합니다")}
         options={[
           { value: "ai", label: "AI 위원회" },
           { value: "rules", label: "규칙 위원회" },
+          { value: "hybrid", label: "규칙 + AI 분기" },
         ]}
       />
       <p className="mt-3 text-body-sm text-ink-secondary">
         {engine.decider === "ai"
           ? "강세·약세 연구원이 토론하고 리스크 검토자가 점검한 뒤 의장이 결론을 냅니다. AI가 답하지 못하거나 예산을 넘으면 그 건은 사지 않고 보류합니다."
-          : "위원 의견을 가중 평균해 정해진 문턱을 넘으면 매수합니다. AI 비용이 들지 않고 결과가 항상 같습니다."}
+          : engine.decider === "hybrid"
+            ? "규칙 위원회가 결론을 내고, 규칙만으로 가르기 애매할 때만 AI에게 한 번 묻습니다. 애매한 경우는 문턱 근처 점수, 위원 의견 충돌, 리스크 경고, 손실 중인 보유 종목입니다. 위험을 줄이는 답은 그대로 따르고, 위험을 늘리는 답은 AI 확신이 보통 이상일 때만 따릅니다. AI가 답하지 못하면 규칙 결론을 씁니다."
+            : "위원 의견을 가중 평균해 정해진 문턱을 넘으면 매수합니다. AI 비용이 들지 않고 결과가 항상 같습니다."}
       </p>
+      {engine.decider === "hybrid" && !view.ai.configured && (
+        <div className="mt-3">
+          <Notice tone="warning">서버에 AI 키(ANTHROPIC_API_KEY)가 없어 분기에서도 AI에게 묻지 못합니다. 키를 넣기 전에는 규칙 위원회와 똑같이 움직입니다.</Notice>
+        </div>
+      )}
       {engine.decider === "ai" && !view.ai.configured && (
         <div className="mt-3">
           <Notice tone="warning">서버에 AI 키(ANTHROPIC_API_KEY)가 없습니다. 이대로 두면 AI 위원회가 판단하지 못해 새 매수를 모두 보류합니다. 키를 넣기 전에는 규칙 위원회를 고르세요.</Notice>

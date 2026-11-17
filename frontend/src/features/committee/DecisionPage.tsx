@@ -138,6 +138,13 @@ export default function DecisionPage() {
           )}
 
           <Panel title="토론 기록" bodyClassName="">
+            {d.transcript?.branch && (
+              <div className="p-4 pb-0">
+                <Notice>
+                  규칙만으로 가르기 애매해 AI에게 물었습니다. {d.transcript.branch.reason}. → {d.transcript.branch.outcome}
+                </Notice>
+              </div>
+            )}
             {d.transcript && d.transcript.steps.length > 0 ? (
               <>
                 {d.transcript.error && (
@@ -154,9 +161,10 @@ export default function DecisionPage() {
               </>
             ) : (
               <p className="p-4 text-body-sm text-ink-secondary">
-                {d.source === "rules"
-                  ? "규칙 위원회가 판단했습니다. 위원 의견을 가중 평균하고 반대 의견 수를 세어 결론을 내므로 토론 기록은 없습니다."
-                  : (d.transcript?.error ?? "토론 기록이 남지 않았습니다.")}
+                {d.transcript?.error ||
+                  (d.source === "rules"
+                    ? "규칙 위원회가 판단했습니다. 위원 의견을 가중 평균하고 반대 의견 수를 세어 결론을 내므로 토론 기록은 없습니다."
+                    : "토론 기록이 남지 않았습니다.")}
               </p>
             )}
           </Panel>

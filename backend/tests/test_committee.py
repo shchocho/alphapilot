@@ -10,15 +10,17 @@ import pytest
 from app.committee import rules_committee
 from app.committee.deliberation import (
     EntryContext,
+    FinalCall,
     HoldingContext,
     build_entry_report,
     build_holding_report,
     deliberate_entry,
     deliberate_holding,
 )
+from app.committee.escalation import entry_branch, holding_branch, resolve, second_opinion
 from app.committee.llm import AnthropicLlm, LlmError, LlmResult, LlmUsage, estimate_cost
 from app.committee.seats import SEAT_WEIGHTS, blend, build_seats, seat, votes
-from app.core.models import Position, Signal, StockInfo
+from app.core.models import Decision, Position, Signal, StockInfo
 from app.regime.regime import compute_regime
 from app.techniques import registry
 from tests.helpers import flat_bars, make_bars, make_market
@@ -401,3 +403,89 @@ def test_missing_api_key_is_not_configured():
 
 def test_unknown_model_falls_back_to_default():
     assert AnthropicLlm("k", model="gpt-something").model == "claude-opus-5-5"
+
+
+# ── 분기 판단(규칙 + AI 분기) ─────────────────────────────────────────────────
+
+def rules_entry(seats) -> Decision:
+    return rules_committee.decide_entry(CODE, "x", seats, "기법")
+
+
+def final(action: str, conviction: str = "medium", size: str = "full", stop: int = 0) -> FinalCall:
+    return FinalCall(action=action, conviction=conviction, size=size, tighter_stop=stop, thesis="AI 근거", key_risks=[],
+                     invalidation="", dissent="")
+
+
+def test_entry_branch_asks_only_when_rules_alone_cannot_tell():
+    clear = [sig("trend", 0.8), sig("regime", 0.5), sig("risk", 0.2)]
+    assert rules_entry(clear).action == "BUY" and entry_branch(clear, rules_entry(clear)) is None
+    borderline = [sig("trend", 0.3), sig("regime", 0.3)]  # 종합 +0.30, 기준 +0.25
+    assert "근처" in entry_branch(borderline, rules_entry(borderline))
+    split = [sig("trend", 1.0), sig("breakout", 1.0), sig("momentum", 1.0), sig("regime", 0.5), sig("overheat", -0.5),
+             sig("value", -0.5), sig("risk", 0.2)]
+    assert "의견이 갈립니다" in entry_branch(split, rules_entry(split))
+    caution = [sig("trend", 1.0), sig("breakout", 1.0), sig("regime", 0.5), sig("risk", -0.3)]
+    assert "리스크 좌석이 경고" in entry_branch(caution, rules_entry(caution))
+
+
+def test_entry_branch_never_escalates_a_safety_hold():
+    weak_market = [sig("trend", 0.6), sig("regime", -0.1)]  # 종합 +0.30으로 경계선이지만 약세장
+    vetoed = [sig("trend", 0.9), sig("regime", 0.5), sig("risk", -0.7)]
+    for seats in (weak_market, vetoed):
+        assert rules_entry(seats).action == "HOLD" and entry_branch(seats, rules_entry(seats)) is None
+
+
+def test_holding_branch_asks_on_a_loss_without_exit_rule_or_near_the_sell_line():
+    strong = [sig("trend", 0.8), sig("regime", 0.5)]
+    keep = rules_committee.decide_holding(CODE, "x", strong, [])
+    assert "손실 중" in holding_branch(strong, keep, -0.06)
+    assert holding_branch(strong, keep, 0.05) is None
+    near = [sig("trend", -0.3), sig("regime", -0.3)]  # 종합 -0.30, 기준 -0.25
+    assert "매도 기준" in holding_branch(near, rules_committee.decide_holding(CODE, "x", near, []), 0.05)
+
+
+def test_resolve_follows_claude_toward_less_risk_but_needs_conviction_to_add_risk():
+    hold, buy = Decision(CODE, "x", "entry", "HOLD", thesis="규칙"), Decision(CODE, "x", "entry", "BUY", thesis="규칙")
+    assert resolve(buy, None)[0] is buy  # 답이 없으면 규칙 결론
+    assert resolve(hold, final("BUY", "low"))[0] is hold  # 확신 낮은 매수 전환은 받지 않는다
+    flipped, _ = resolve(hold, final("BUY", "medium", "half"))
+    assert (flipped.action, flipped.source, flipped.size_fraction) == ("BUY", "ai", 0.5)
+    cooled, _ = resolve(buy, final("HOLD", "very_low"))  # 위험을 줄이는 쪽은 확신과 상관없이 따른다
+    assert (cooled.action, cooled.source, cooled.thesis) == ("HOLD", "ai", "AI 근거")
+    agreed, _ = resolve(buy, final("BUY", "high", "quarter", 9_500))  # 같은 결론이면 줄이는 쪽만 반영
+    assert (agreed.source, agreed.thesis, agreed.size_fraction, agreed.stop) == ("rules", "규칙", 0.25, 9_500)
+    sell, keep = Decision(CODE, "x", "holding", "SELL"), Decision(CODE, "x", "holding", "HOLD")
+    assert resolve(sell, final("HOLD", "low"))[0] is sell
+    assert resolve(sell, final("HOLD", "high"))[0].action == "HOLD"
+    assert resolve(keep, final("SELL", "low"))[0].action == "SELL"
+
+
+async def test_second_opinion_makes_one_call_and_records_why_and_what_happened():
+    rules = Decision(CODE, "테스트전자", "entry", "BUY", thesis="규칙 매수")
+    llm = FakeLlm({"branch": {**FINAL_BUY, "action": "HOLD", "conviction": "low"}})
+    budget = FakeBudget()
+    decision, transcript = await second_opinion(entry_ctx(), rules, "약세 좌석이 2개라 의견이 갈립니다", llm, budget)
+    assert [c["role"] for c in llm.calls] == ["branch"] and len(budget.records) == 1
+    assert "약세 좌석이 2개" in llm.calls[0]["task"] and "규칙 매수" in llm.calls[0]["task"]
+    assert llm.calls[0]["schema"]["properties"]["action"]["enum"] == ["BUY", "HOLD"]
+    assert (decision.action, decision.source) == ("HOLD", "ai")
+    branch = transcript.to_dict()["branch"]
+    assert branch["adopted"] and (branch["rules_action"], branch["ai_action"]) == ("BUY", "HOLD")
+
+    held = Decision(CODE, "테스트전자", "holding", "HOLD", thesis="보유 유지")
+    llm = FakeLlm({"branch": {**FINAL_BUY, "action": "SELL"}})
+    decision, _ = await second_opinion(holding_ctx(), held, "손실 중", llm, FakeBudget())
+    assert decision.action == "SELL" and llm.calls[0]["schema"]["properties"]["action"]["enum"] == ["SELL", "HOLD"]
+
+
+async def test_second_opinion_keeps_the_rules_decision_when_claude_gives_no_usable_answer():
+    rules = Decision(CODE, "테스트전자", "entry", "BUY", thesis="규칙 매수")
+    cases = [
+        (FakeLlm({"branch": LlmError("timeout", "시간 초과")}), FakeBudget()),
+        (FakeLlm({"branch": "JSON이 아님"}), FakeBudget()),
+        (FakeLlm({"branch": FINAL_BUY}), FakeBudget(exhausted=True)),
+    ]
+    for llm, budget in cases:
+        decision, transcript = await second_opinion(entry_ctx(), rules, "의견이 갈립니다", llm, budget)
+        assert decision is rules and transcript.error and transcript.branch["adopted"] is False
+    assert cases[2][0].calls == []  # 예산을 넘으면 호출하지 않는다

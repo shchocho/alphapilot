@@ -28,7 +28,7 @@ class EngineSettings(BaseModel):
     automation_level: int = Field(1, ge=0, le=3)
     auto_max_order_value: int = Field(1_000_000, ge=0, le=1_000_000_000)  # 2단계: 이 금액 이하 매수만 자동
 
-    decider: Literal["ai", "rules"] = "ai"
+    decider: Literal["ai", "rules", "hybrid"] = "ai"  # hybrid = 규칙이 결론, 애매한 분기만 AI에게 묻는다
     ai_model: str = DEFAULT_MODEL
     ai_depth: Literal["light", "standard", "deep"] = "standard"
     ai_effort: str = "medium"

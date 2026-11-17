@@ -73,10 +73,10 @@ function Summary({ c }: { c: Committee }) {
     <p className="num text-body-sm text-ink-secondary">
       {parts.join(" · ")}
       {(t.review ?? 0) > 0 && <span className="font-semibold text-warning"> · 확인 필요 {t.review}건</span>}
-      {c.decider === "ai" && (
+      {c.decider !== "rules" && (
         <>
           {" "}
-          · 심의 깊이 {c.depth_label} · 이날 AI 비용 ${c.cost_usd.toFixed(2)}
+          · {c.decider === "ai" ? `심의 깊이 ${c.depth_label} · ` : ""}이날 AI 비용 ${c.cost_usd.toFixed(2)}
         </>
       )}
     </p>

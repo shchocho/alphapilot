@@ -230,13 +230,15 @@ class Transcript:
     model: str
     steps: list[dict[str, Any]] = field(default_factory=list)
     error: str = ""
+    branch: dict[str, Any] | None = None  # 분기 판단(escalation.py)일 때만: 묻는 이유와 반영 결과
 
     @property
     def cost_usd(self) -> float:
         return round(sum(step.get("cost_usd", 0.0) for step in self.steps), 6)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"depth": self.depth, "model": self.model, "steps": self.steps, "error": self.error, "cost_usd": self.cost_usd}
+        return {"depth": self.depth, "model": self.model, "steps": self.steps, "error": self.error, "cost_usd": self.cost_usd,
+                **({"branch": self.branch} if self.branch else {})}
 
 
 async def _ask(llm: LlmClient, budget: Budget, transcript: Transcript, *, role: str, label: str, shared: str,

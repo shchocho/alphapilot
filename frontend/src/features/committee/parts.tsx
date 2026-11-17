@@ -18,7 +18,8 @@ export function ActionBadge({ action, review = false }: { action: string; review
   return <Badge tone={ACTION_TONE[action] ?? "neutral"}>{labelOf(ACTION, action)}</Badge>;
 }
 
-export const sourceLabel = (source: string | null | undefined): string => (source === "ai" ? "AI 위원회" : source === "rules" ? "규칙 위원회" : "–");
+export const sourceLabel = (source: string | null | undefined): string =>
+  source === "ai" ? "AI 위원회" : source === "rules" ? "규칙 위원회" : source === "hybrid" ? "규칙 위원회(애매한 분기만 AI에게 물음)" : "–";
 
 // ── 위원 의견 ───────────────────────────────────────────────────────────
 
