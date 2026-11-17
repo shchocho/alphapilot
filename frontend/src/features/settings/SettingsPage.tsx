@@ -213,7 +213,7 @@ function AiPanel({ view }: { view: SettingsView }) {
         <Notice tone="warning">서버 .env에 ANTHROPIC_API_KEY가 없습니다. 키가 없으면 AI 위원회는 판단하지 못하고 새 매수를 모두 보류합니다. 그동안은 자동매매에서 규칙 위원회를 고르세요.</Notice>
       )}
       <form
-        className="mt-4 grid gap-x-4 gap-y-1 sm:grid-cols-2"
+        className="mt-4 grid gap-x-4 gap-y-3 sm:grid-cols-2"
         onSubmit={(event: FormEvent) => {
           event.preventDefault();
           void save({ ai_model: model, ai_depth: depth, ai_effort: effort, ai_daily_budget_usd: budgetValue }, "AI 위원회 설정을 저장했습니다");
@@ -254,7 +254,8 @@ function AiPanel({ view }: { view: SettingsView }) {
           {(p) => <TextInput {...p} inputMode="decimal" value={budget} onChange={(e) => setBudget(e.target.value.replace(/[^\d.]/g, ""))} className="num" />}
         </Field>
         <div className="flex items-end pb-5">
-          <Button type="submit" variant="primary" busy={busy} disabled={!dirty || !valid}>
+          {/* 설정 화면에는 저장 단추가 여럿이다. 바꾼 값이 있는 묶음의 저장만 잉크(primary)로 올라와, 지금 누를 단추가 하나로 보인다. */}
+          <Button type="submit" variant={dirty ? "primary" : "secondary"} busy={busy} disabled={!dirty || !valid}>
             저장
           </Button>
         </div>
@@ -317,15 +318,15 @@ function CostPanel({ view }: { view: SettingsView }) {
           void save({ commission_rate: Number(form.commission_rate) / 100, sell_tax_rate: Number(form.sell_tax_rate) / 100, slippage_rate: Number(form.slippage_rate) / 100 }, "비용 가정을 저장했습니다");
         }}
       >
-        <div className="grid gap-x-4 sm:grid-cols-3">
+        <div className="grid gap-x-4 gap-y-3 sm:grid-cols-3">
           {fields.map((f) => (
             <Field key={f.key} label={f.label} hint={f.hint}>
               {(p) => <TextInput {...p} inputMode="decimal" value={form[f.key]} onChange={(e) => setForm({ ...form, [f.key]: e.target.value.replace(/[^\d.]/g, "") })} className="num" />}
             </Field>
           ))}
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <Button type="submit" busy={busy} disabled={!dirty}>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <Button type="submit" variant={dirty ? "primary" : "secondary"} busy={busy} disabled={!dirty}>
             저장
           </Button>
           <p className="text-label text-ink-muted">시뮬레이션과 백테스트에 쓰는 값입니다. 실제 수수료는 증권사 약정에 따라 다릅니다.</p>
@@ -480,9 +481,9 @@ function LimitsPanel({ limits }: { limits: RiskLimits }) {
           {LIMIT_GROUPS.map((group) => (
             <fieldset key={group.title}>
               <legend className="mb-2 text-body-sm font-bold text-ink">{group.title}</legend>
-              <div className="grid gap-x-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+              <div className="grid gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
                 {group.fields.map((f) => (
-                  <Field key={f.key} label={f.label} hint={f.hint ?? " "}>
+                  <Field key={f.key} label={f.label} hint={f.hint}>
                     {(p) =>
                       f.kind === "conviction" ? (
                         <Select {...p} value={form[f.key]} onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}>
@@ -514,7 +515,7 @@ function LimitsPanel({ limits }: { limits: RiskLimits }) {
           </div>
         )}
         <div className="mt-3 flex flex-wrap items-center gap-3">
-          <Button type="submit" variant="primary" busy={busy} disabled={changed.length === 0 || invalid.length > 0}>
+          <Button type="submit" variant={changed.length > 0 ? "primary" : "secondary"} busy={busy} disabled={changed.length === 0 || invalid.length > 0}>
             한도 저장
           </Button>
           <Button onClick={() => setForm(initial)} disabled={changed.length === 0 || busy}>

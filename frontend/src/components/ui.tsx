@@ -1,7 +1,7 @@
 /** 공용 화면 부품 — Universal Design DNA의 상태·치수 규칙을 따른다. 색·간격·반경은 tokens.css의 토큰만 쓴다. */
 
 import * as RD from "@radix-ui/react-dialog";
-import { CircleAlert, CircleCheck, Info, LoaderCircle, TriangleAlert, X } from "lucide-react";
+import { ChevronRight, CircleAlert, CircleCheck, Info, LoaderCircle, TriangleAlert, X } from "lucide-react";
 import { useId, useRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type KeyboardEvent, type ReactNode, type SelectHTMLAttributes } from "react";
 import { arrow, direction } from "@/lib/format";
 
@@ -55,6 +55,17 @@ export function Button({ variant = "secondary", size = "md", busy = false, icon,
     </button>
   );
 }
+
+/**
+ * 접고 펴는 <details>의 표시. details에 `group/disclosure`를 달면 펼쳤을 때 아래로 돈다.
+ * 밑줄 글자로 두면 링크처럼 보여서, 펼치는 단추는 화살표로 구별한다.
+ */
+export function DisclosureIcon({ className }: { className?: string }) {
+  return <ChevronRight aria-hidden className={cx("size-4 shrink-0 transition-transform duration-(--duration-fast) group-open/disclosure:rotate-90", className)} />;
+}
+
+/** 펼치는 단추로 쓰는 <summary>의 공용 모양(링크와 구별: 밑줄 없음, 화살표 + 굵은 글자). */
+export const SUMMARY = "inline-flex min-h-11 cursor-pointer list-none items-center gap-1 text-label font-semibold text-ink-secondary transition-colors duration-(--duration-fast) hover:text-ink [&::-webkit-details-marker]:hidden";
 
 export function Spinner({ className }: { className?: string }) {
   return <LoaderCircle aria-hidden className={cx("spin size-4", className)} />;
@@ -312,7 +323,8 @@ export function Tabs<T extends string>({ value, onChange, items, label }: { valu
     refs.current[items[next].value]?.focus();
   };
   return (
-    <div role="tablist" aria-label={label} className="flex max-w-full gap-6 overflow-x-auto border-b border-divider">
+    // 좁은 화면(375px)에서도 탭 다섯 개가 한 줄에 다 보이도록 간격을 줄인다(글자 사이는 글자 둘레 여백까지 16px)
+    <div role="tablist" aria-label={label} className="flex max-w-full gap-2 overflow-x-auto border-b border-divider sm:gap-6">
       {items.map((item, index) => {
         const selected = item.value === value;
         return (
@@ -325,7 +337,7 @@ export function Tabs<T extends string>({ value, onChange, items, label }: { valu
             role="tab"
             id={`tab-${item.value}`}
             aria-selected={selected}
-            aria-controls={`panel-${item.value}`}
+            aria-controls={selected ? `panel-${item.value}` : undefined}
             tabIndex={selected ? 0 : -1}
             onClick={() => onChange(item.value)}
             onKeyDown={(event) => move(event, index)}
@@ -334,8 +346,8 @@ export function Tabs<T extends string>({ value, onChange, items, label }: { valu
               selected ? "border-ink font-semibold text-ink" : "border-transparent font-medium text-ink-muted hover:text-ink",
             )}
           >
-            {/* 포커스 링은 글자 둘레에 그린다: 탭 전체에 그리면 선택 밑줄을 가린다 */}
-            <span className="rounded-xs px-1 py-1 group-focus-visible:outline-2 group-focus-visible:outline-offset-2 group-focus-visible:outline-focus">{item.label}</span>
+            {/* 포커스 링은 글자 둘레 여백 안쪽에 그린다: 탭 전체에 그리면 선택 밑줄을 가리고, 바깥에 그리면 가로 스크롤 영역에 첫 탭의 링이 잘린다 */}
+            <span className="rounded-xs px-1 py-1 group-focus-visible:outline-2 group-focus-visible:-outline-offset-2 group-focus-visible:outline-focus">{item.label}</span>
           </button>
         );
       })}
@@ -352,15 +364,39 @@ interface ModalProps {
   description?: ReactNode;
   children: ReactNode;
   wide?: boolean;
+  /** 연 요소가 사라졌을 때(메뉴 항목에서 연 경우 등) 닫은 뒤 포커스를 돌려줄 곳. */
+  returnFocus?: () => HTMLElement | null | undefined;
 }
 
-/** 흐름을 멈추고 결정을 요구하는 모달. 블러 없는 scrim, 떠 있는 표면. */
-export function Modal({ open, onOpenChange, title, description, children, wide = false }: ModalProps) {
+/**
+ * 흐름을 멈추고 결정을 요구하는 모달. 블러 없는 scrim, 떠 있는 표면.
+ * Radix의 Trigger 없이 상태로 여는 모달이라, 닫을 때 포커스가 <body>로 빠지지 않게 연 순간의 요소를 기억해 돌려준다.
+ */
+export function Modal({ open, onOpenChange, title, description, children, wide = false, returnFocus }: ModalProps) {
+  const returnTo = useRef<HTMLElement | null>(null);
   return (
     <RD.Root open={open} onOpenChange={onOpenChange}>
       <RD.Portal>
         <RD.Overlay className="fixed inset-0 z-(--z-overlay) bg-scrim data-[state=open]:enter-fade" />
         <RD.Content
+          onOpenAutoFocus={(event) => {
+            returnTo.current = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
+            // 확인 문구처럼 바로 써야 하는 칸은 data-autofocus로 표시한다(없으면 Radix가 첫 단추 '닫기'로 보낸다)
+            const first = (event.currentTarget as HTMLElement | null)?.querySelector<HTMLElement>("[data-autofocus]");
+            if (first) {
+              event.preventDefault();
+              first.focus();
+            }
+          }}
+          onCloseAutoFocus={(event) => {
+            const opener = returnTo.current;
+            returnTo.current = null;
+            const target = opener?.isConnected ? opener : returnFocus?.();
+            if (target?.isConnected) {
+              event.preventDefault();
+              target.focus();
+            }
+          }}
           className={cx(
             "fixed top-1/2 left-1/2 z-(--z-modal) max-h-[88dvh] w-[calc(100vw-var(--space-8))] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl bg-surface-raised p-6 shadow-3 data-[state=open]:enter-dialog",
             wide ? "max-w-180" : "max-w-130",

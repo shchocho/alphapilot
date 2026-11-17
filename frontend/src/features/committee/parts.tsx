@@ -1,9 +1,9 @@
 /** 위원회 판단을 보여주는 공용 부품: 위원 의견, 기법 점검표, 최종 판단, 리스크 점검 단계. */
 
 import { Check, CircleAlert, X } from "lucide-react";
-import { Badge, cx } from "@/components/ui";
+import { Badge, DisclosureIcon, SUMMARY } from "@/components/ui";
 import { labelOf, num, pct } from "@/lib/format";
-import { ACTION, ACTION_TONE, CONVICTION, GATE_OUTCOME, GATE_TONE, planText, STANCE, STANCE_TONE, TECH_STATE, TECH_STATE_TONE } from "@/lib/labels";
+import { ACTION, ACTION_TONE, checkValueText, CONVICTION, GATE_OUTCOME, GATE_RULE, GATE_TONE, planText, STANCE, STANCE_TONE, TECH_STATE, TECH_STATE_TONE } from "@/lib/labels";
 import type { FinalDecision, Gate, Seat, TechniqueResult } from "@/lib/types";
 
 export function ActionBadge({ action, review = false }: { action: string; review?: boolean }) {
@@ -23,13 +23,13 @@ export const sourceLabel = (source: string | null | undefined): string =>
 
 // ── 위원 의견 ───────────────────────────────────────────────────────────
 
-/** 의견 값(−1~+1)을 가운데 0에서 좌우로 뻗는 막대로 그린다. 방향은 옆의 글자(긍정·부정)가 함께 전한다. */
+/** 의견 값(−1~+1)을 가운데 0에서 좌우로 뻗는 막대로 그린다. 방향은 뻗는 쪽과 옆의 글자(긍정·부정)·부호가 전한다. */
 function OpinionBar({ value, abstained }: { value: number; abstained: boolean }) {
   const half = Math.max(0, Math.min(1, Math.abs(value))) * 50;
   return (
-    <div aria-hidden className="relative h-1 rounded-full bg-surface-sunken">
+    <div aria-hidden className="relative h-1 rounded-full bg-divider">
       <span className="absolute top-1/2 left-1/2 h-3 w-px -translate-y-1/2 bg-ink-muted" />
-      {!abstained && half > 0 && <span className={cx("absolute top-0 h-full rounded-full", value >= 0 ? "bg-success" : "bg-danger")} style={value >= 0 ? { left: "50%", width: `${half}%` } : { right: "50%", width: `${half}%` }} />}
+      {!abstained && half > 0 && <span className="absolute top-0 h-full rounded-full bg-ink-secondary" style={value >= 0 ? { left: "50%", width: `${half}%` } : { right: "50%", width: `${half}%` }} />}
     </div>
   );
 }
@@ -51,8 +51,11 @@ export function SeatList({ seats }: { seats: Seat[] }) {
           </div>
           <p className="num mt-2 text-body-sm text-ink-secondary">{seat.summary}</p>
           {seat.components.length > 0 && (
-            <details className="mt-1">
-              <summary className="inline-flex min-h-11 cursor-pointer items-center text-label font-semibold text-ink-secondary underline underline-offset-2">근거 {seat.components.length}개 보기</summary>
+            <details className="group/disclosure mt-1">
+              <summary className={SUMMARY}>
+                <DisclosureIcon />
+                근거 {seat.components.length}개 보기
+              </summary>
               <ul className="mt-1 space-y-1">
                 {seat.components.map((c) => (
                   <li key={c.name} className="num flex items-start gap-2 text-label text-ink-secondary">
@@ -73,22 +76,16 @@ export function SeatList({ seats }: { seats: Seat[] }) {
 
 // ── 기법 점검표 ─────────────────────────────────────────────────────────
 
-function checkValue(value: number | string | null): string {
-  if (value === null) return "자료 없음";
-  if (typeof value === "string") return value;
-  if (Math.abs(value) >= 1000) return num(value);
-  return Number.isInteger(value) ? String(value) : value.toFixed(2);
-}
-
 export function TechniqueChecks({ techniques }: { techniques: TechniqueResult[] }) {
   return (
     <div>
       {techniques.map((t) => {
         const passed = t.checks.filter((c) => c.passed).length;
         return (
-          <details key={t.key} className="group border-b border-divider last:border-b-0" open={t.passed}>
-            <summary className="flex min-h-12 cursor-pointer list-none flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-2 [&::-webkit-details-marker]:hidden">
+          <details key={t.key} className="group/disclosure border-b border-divider last:border-b-0" open={t.passed}>
+            <summary className="flex min-h-12 cursor-pointer list-none flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-2 transition-colors duration-(--duration-fast) hover:bg-surface-sunken [&::-webkit-details-marker]:hidden">
               <span className="flex items-center gap-2">
+                <DisclosureIcon className="text-ink-muted" />
                 {t.passed ? <Check aria-label="통과" className="size-4 shrink-0 text-success" /> : <X aria-label="통과 못 함" className="size-4 shrink-0 text-ink-muted" />}
                 <span className="text-body-sm font-semibold text-ink">{t.name}</span>
               </span>
@@ -117,8 +114,8 @@ export function TechniqueChecks({ techniques }: { techniques: TechniqueResult[] 
                       <tr key={c.key} className="text-body-sm">
                         <td className="w-6 py-1 align-top">{c.passed ? <Check aria-label="통과" className="mt-1 size-4 text-success" /> : <X aria-label="미달" className="mt-1 size-4 text-danger" />}</td>
                         <td className="py-1 pr-3 align-top text-ink">{c.label}</td>
-                        <td className="num py-1 pr-3 text-right align-top font-semibold whitespace-nowrap text-ink">{checkValue(c.value)}</td>
-                        <td className="num py-1 text-right align-top text-label whitespace-nowrap text-ink-muted">기준 {c.threshold}</td>
+                        <td className="num py-1 pr-3 text-right align-top font-semibold text-ink sm:whitespace-nowrap">{checkValueText(c.value, c.threshold)}</td>
+                        <td className="num py-1 text-right align-top text-label text-ink-muted sm:whitespace-nowrap">기준 {c.threshold}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -211,8 +208,9 @@ export function GateSteps({ gate }: { gate: Gate }) {
               {labelOf(GATE_OUTCOME, step.outcome)}
             </Badge>
             <span className="num min-w-0 text-ink-secondary">
-              <span className="font-semibold text-ink">{step.rule}</span> · {step.detail}
-              {step.qty_after !== null && step.outcome === "reduce" && <> → {num(step.qty_after)}주</>}
+              <span className="font-semibold text-ink">{labelOf(GATE_RULE, step.rule)}</span> · {step.detail}
+              {/* 줄인 수량이 설명에 이미 있으면("18주 → 13주") 다시 붙이지 않는다 */}
+              {step.qty_after !== null && step.outcome === "reduce" && !step.detail.includes("→") && <> → {num(step.qty_after)}주</>}
             </span>
           </li>
         ))}

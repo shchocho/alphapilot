@@ -113,7 +113,7 @@ function AutomationPanel({ view }: { view: SettingsView }) {
         {view.options.automation.map((option) => {
           const on = engine.automation_level === option.value;
           return (
-            <label key={option.value} className={cx("flex cursor-pointer gap-3 rounded-md border p-3 transition-colors duration-(--duration-fast)", on ? "border-ink bg-surface-sunken" : "border-divider hover:border-divider")}>
+            <label key={option.value} className={cx("flex cursor-pointer gap-3 rounded-md border p-3 transition-colors duration-(--duration-fast)", on ? "border-ink bg-surface-sunken" : "border-divider hover:border-border")}>
               <input
                 type="radio"
                 name="automation"
@@ -222,6 +222,7 @@ function SimulationPanel({ view }: { view: SettingsView }) {
   const [results, setResults] = useState<DayResult[]>([]);
   const [resetOpen, setResetOpen] = useState(false);
   const dayCount = Math.max(1, Math.min(250, Number(days) || 1));
+  const pendingNow = status?.pending_approvals ?? 0;
 
   const advance = async (count: number, auto: boolean, mode: "one" | "many") => {
     setBusy(mode);
@@ -260,16 +261,18 @@ function SimulationPanel({ view }: { view: SettingsView }) {
         </div>
       )}
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <div className="rounded-md border border-divider p-3">
+      {/* 두 방법을 패널 안의 상자로 다시 감싸지 않고, 구분선 하나로 나눈다(카드 안 카드 없음) */}
+      <div className="mt-4 grid gap-4 border-t border-divider pt-4 lg:grid-cols-2 lg:gap-6">
+        <div>
           <h3 className="text-body-sm font-bold text-ink">하루씩</h3>
           <p className="mt-1 text-body-sm text-ink-secondary">다음 거래일 하루를 처리합니다. 승인 대기 계획은 그대로 남아 내 결정을 기다립니다.</p>
-          <Button className="mt-3" variant="primary" busy={busy === "one"} disabled={busy !== null} icon={<StepForward aria-hidden className="size-4" />} onClick={() => void advance(1, false, "one")}>
+          {/* 이 화면의 primary는 승인 카드의 승인 단추다. 시뮬레이션 진행은 보조 행동으로 둔다. */}
+          <Button className="mt-3" busy={busy === "one"} disabled={busy !== null} icon={<StepForward aria-hidden className="size-4" />} onClick={() => void advance(1, false, "one")}>
             다음 거래일 처리
           </Button>
         </div>
         <form
-          className="rounded-md border border-divider p-3"
+          className="border-t border-divider pt-4 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6"
           onSubmit={(event) => {
             event.preventDefault();
             void advance(dayCount, autoApprove, "many");
@@ -281,10 +284,16 @@ function SimulationPanel({ view }: { view: SettingsView }) {
               {(p) => <TextInput {...p} inputMode="numeric" value={days} onChange={(e) => setDays(e.target.value.replace(/\D/g, "").slice(0, 3))} className="num" />}
             </Field>
             <Button type="submit" busy={busy === "many"} disabled={busy !== null} icon={<FastForward aria-hidden className="size-4" />} className="mb-5">
-              {dayCount}거래일 재생
+              {dayCount}거래일 이어서 처리
             </Button>
           </div>
           <Check checked={autoApprove} onChange={(e) => setAutoApprove(e.target.checked)} label="승인 대기 계획을 자동으로 승인" hint="지난 구간을 한 번에 돌려 볼 때 씁니다. 끄면 승인하지 않은 계획은 기한이 지나 사라집니다." />
+          {/* 위쪽에 아직 보지 않은 승인 카드가 있으면, 이어서 처리가 그 카드까지 승인한다는 것을 단추 옆에 바로 적는다 */}
+          {autoApprove && pendingNow > 0 && (
+            <p className="num text-label text-ink-secondary">
+              지금 승인을 기다리는 {pendingNow}건도 자동으로 승인됩니다. 직접 보고 고르려면 위의 카드에서 먼저 결정하세요.
+            </p>
+          )}
         </form>
       </div>
 

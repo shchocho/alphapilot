@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { monthTicks, niceScale, textWidth } from "@/lib/chartmath";
 import { dayDots } from "@/lib/format";
-import { cx } from "./ui";
+import { cx, DisclosureIcon, SUMMARY } from "./ui";
 
 export function useWidth<T extends HTMLElement>(): [React.RefObject<T | null>, number] {
   const ref = useRef<T | null>(null);
@@ -286,8 +286,11 @@ export function Sparkline({ values, width = 88, height = 28 }: { values: number[
 /** 차트 아래에 같은 수치를 표로 펼쳐 볼 수 있게 한다. */
 export function DataTableToggle({ summary = "표로 보기", children }: { summary?: string; children: ReactNode }) {
   return (
-    <details className="mt-2 text-body-sm">
-      <summary className="inline-flex min-h-11 cursor-pointer items-center text-label font-semibold text-ink-secondary underline underline-offset-2">{summary}</summary>
+    <details className="group/disclosure mt-2 text-body-sm">
+      <summary className={SUMMARY}>
+        <DisclosureIcon />
+        {summary}
+      </summary>
       <div className="mt-1 max-h-64 overflow-auto rounded-md border border-divider">{children}</div>
     </details>
   );

@@ -4,7 +4,7 @@ import { useMemo, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { TimeChart } from "@/components/charts";
-import { Button, Check, cx, Delta, Empty, ErrorState, Field, Notice, PageHeader, Panel, Select, SkeletonRows, TD, TDR, TextInput, TH, THR } from "@/components/ui";
+import { Button, Check, cx, Delta, DisclosureIcon, Empty, ErrorState, Field, Notice, PageHeader, Panel, Select, SkeletonRows, TD, TDR, TextInput, TH, THR } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import { stepDigits } from "@/lib/chartmath";
 import { dayDots, num, pct, won, wonExact, wonShort, wonSigned } from "@/lib/format";
@@ -91,14 +91,17 @@ function RunForm({ view, onDone, startOpen }: { view: SettingsView; onDone: (id:
   };
 
   return (
-    <details className="rounded-lg border border-divider bg-surface" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
-      <summary className="flex min-h-12 cursor-pointer items-center px-4 text-h6 font-semibold text-ink">새 백테스트 돌리기</summary>
+    <details className="group/disclosure rounded-lg border border-divider bg-surface" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <summary className="flex min-h-12 cursor-pointer list-none items-center gap-2 rounded-lg px-4 text-h6 font-semibold text-ink transition-colors duration-(--duration-fast) hover:bg-surface-sunken [&::-webkit-details-marker]:hidden">
+        <DisclosureIcon className="text-ink-secondary" />
+        새 백테스트 돌리기
+      </summary>
       <form onSubmit={submit} className="border-t border-divider p-4">
         <div className="grid gap-x-4 gap-y-1 sm:grid-cols-2 xl:grid-cols-4">
           <Field label="시작일" hint="비우면 일봉이 충분해지는 첫날부터">
             {(p) => <TextInput {...p} type="date" value={start} max={end || view.data.day || undefined} onChange={(e) => setStart(e.target.value)} className="num" />}
           </Field>
-          <Field label="끝 날" hint={view.data.day ? `비우면 ${dayDots(view.data.day)}까지` : "비우면 가장 최근 일봉까지"}>
+          <Field label="종료일" hint={view.data.day ? `비우면 ${dayDots(view.data.day)}까지` : "비우면 가장 최근 일봉까지"}>
             {(p) => <TextInput {...p} type="date" value={end} min={start || undefined} max={view.data.day ?? undefined} onChange={(e) => setEnd(e.target.value)} className="num" />}
           </Field>
           <Field label="시작 자금(원)" error={cashValue < 1_000_000 ? "100만 원 이상이어야 합니다" : null}>

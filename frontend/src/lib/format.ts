@@ -108,6 +108,13 @@ export function clock(iso: string | null | undefined): string {
   return iso.slice(11, 16);
 }
 
+/** 승인 기한 같은 마감 시각: "2026-10-06T15:20:00+09:00" → "10월 6일 15:20". 시각이 없으면 날짜만. */
+export function deadlineText(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const time = clock(iso);
+  return time ? `${dayLabel(iso)} ${time}` : dayLabel(iso);
+}
+
 /** 초 → "4시간 48분" / "12분" */
 export function duration(seconds: number | null | undefined): string {
   if (seconds === null || seconds === undefined) return "";

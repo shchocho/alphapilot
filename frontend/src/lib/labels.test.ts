@@ -1,5 +1,29 @@
 import { describe, expect, it } from "vitest";
-import { entryText, exitPlanText, heldText, kindTone } from "./labels";
+import { checkValueText, entryText, exitPlanText, GATE_RULE, heldText, kindTone } from "./labels";
+
+describe("기법 점검 값", () => {
+  it("기준에 %가 있으면 값도 퍼센트로, 기준에 부호가 있으면 값에도 부호를 붙인다", () => {
+    expect(checkValueText(187.3, "≥ +25%")).toBe("+187.3%");
+    expect(checkValueText(-50.8, "≥ −25%")).toBe("−50.8%");
+    expect(checkValueText(3.7, "2% ~ 12%")).toBe("3.7%");
+    expect(checkValueText(0, "≥ −25%")).toBe("0.0%");
+  });
+  it("퍼센트가 아닌 값은 그대로, 음수는 진짜 빼기 기호로", () => {
+    expect(checkValueText(215_500, "> 194,958")).toBe("215,500");
+    expect(checkValueText(96, "> 70")).toBe("96");
+    expect(checkValueText(-0.35, "> 0")).toBe("−0.35");
+    expect(checkValueText(null, "> 0")).toBe("자료 없음");
+    expect(checkValueText("3단계", "")).toBe("3단계");
+  });
+});
+
+describe("리스크 점검 규칙 이름", () => {
+  it("서버 키 대신 설정 화면의 한도 이름으로 적는다", () => {
+    expect(GATE_RULE.max_stop).toBe("손절 폭 상한");
+    expect(GATE_RULE.max_heat).toBe("손절 시 총손실 상한");
+    expect(GATE_RULE.cash).toBe("남겨 둘 현금");
+  });
+});
 
 describe("주문 계획 설명", () => {
   it("매도는 진입 방식과 상관없이 다음 거래일 시가", () => {

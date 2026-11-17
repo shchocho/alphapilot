@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import { DataTableToggle, TimeChart } from "@/components/charts";
 import { Badge, cx, Delta, Empty, ErrorState, Panel, SkeletonRows, TD, TDR, TH, THR } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
-import { dayDots, dayLabel, num, pct, won, wonExact, wonShort, wonSigned } from "@/lib/format";
+import { dayDots, dayLabel, deadlineText, num, pct, won, wonExact, wonShort, wonSigned } from "@/lib/format";
 import { entryText, EXIT_RULE, exitPlanText, heldText } from "@/lib/labels";
 import { useDashboard, useStatus } from "@/lib/queries";
 import type { Dashboard, IntentCard, PositionRow, RegimeFull, Status } from "@/lib/types";
@@ -21,21 +21,26 @@ export default function DashboardPage() {
 }
 
 function DashboardView({ d, status }: { d: Dashboard; status: Status | undefined }) {
-  // 글 순서(승인 → 통장정리 → 감시)는 좁은 화면의 보는 순서와 같고, 넓은 화면에서는 격자로 자리만 옮긴다.
+  // 글 순서(승인 → 통장정리·자산 추이 → 감시·국면)가 좁은 화면의 보는 순서다.
+  // 넓은 화면(1400px 이상)에서는 왼쪽(통장정리·자산 추이)과 오른쪽(승인·감시·국면)을 각각 세로로 쌓는다.
+  // 두 열이 행을 나눠 쓰지 않아, 승인 카드가 길어도 통장정리 아래에 빈자리가 생기지 않는다.
+  // 1400px보다 좁으면 오른쪽 열(352px)이 통장정리의 내용 칸을 140px 남짓으로 줄여서 한 줄로 쌓는다.
   const stable = useStableCards(d.pending);
   const hasApprovals = stable.kept.length > 0 || d.plans.length > 0;
 
   return (
     <div className="space-y-4">
       <Verdict d={d} status={status} />
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_calc(var(--spacing)*88)] xl:grid-rows-[auto_1fr]">
-        {hasApprovals && <Approvals pendingCount={d.pending.length} stable={stable} plans={d.plans} className="xl:col-start-2 xl:row-start-1" />}
-        <Passbook book={d.passbook} className="xl:col-start-1 xl:row-span-2 xl:row-start-1 xl:self-start" />
-        <Watch positions={d.watch} max={d.risk.max_positions} className={cx("xl:col-start-2 xl:self-start", hasApprovals ? "xl:row-start-2" : "xl:row-start-1")} />
-      </div>
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_calc(var(--spacing)*88)]">
-        <EquityPanel d={d} />
-        {d.regime && <RegimePanel regime={d.regime} />}
+      <div className="grid gap-4 min-[1400px]:grid-cols-[minmax(0,1fr)_calc(var(--spacing)*88)] min-[1400px]:grid-rows-[auto_auto_1fr]">
+        {hasApprovals && <Approvals pendingCount={d.pending.length} stable={stable} plans={d.plans} className="min-[1400px]:col-start-2 min-[1400px]:row-start-1" />}
+        <div className="min-w-0 space-y-4 min-[1400px]:col-start-1 min-[1400px]:row-span-3 min-[1400px]:row-start-1">
+          <Passbook book={d.passbook} />
+          <EquityPanel d={d} />
+        </div>
+        <div className={cx("grid content-start gap-4 md:max-[1399px]:grid-cols-2 min-[1400px]:col-start-2", hasApprovals ? "min-[1400px]:row-start-2" : "min-[1400px]:row-start-1")}>
+          <Watch positions={d.watch} max={d.risk.max_positions} />
+          {d.regime && <RegimePanel regime={d.regime} />}
+        </div>
       </div>
     </div>
   );
@@ -45,7 +50,12 @@ function DashboardView({ d, status }: { d: Dashboard; status: Status | undefined
 
 function verdictOf(d: Dashboard, status: Status | undefined): { text: string; sub: string; tone: "plan" | "danger" | "warn" | "calm" } {
   if (status?.last_error) return { tone: "danger", text: "엔진에 오류가 있습니다", sub: "위 안내의 오류 내용을 확인하세요. 오류가 풀릴 때까지 새 주문은 나가지 않습니다." };
-  if (d.pending.length > 0) return { tone: "plan", text: `승인을 기다리는 주문 계획이 ${d.pending.length}건 있습니다`, sub: "승인한 계획만 주문으로 나갑니다. 기한이 지나면 계획은 사라집니다." };
+  if (d.pending.length > 0) {
+    // 가장 이른 승인 기한을 적는다(ISO 문자열이라 글자 순서가 시각 순서다)
+    const first = d.pending.map((c) => c.expires_at).filter((e): e is string => Boolean(e)).sort()[0];
+    const by = first ? `${deadlineText(first)}까지 승인하지 않으면 계획은 사라집니다.` : "기한이 지나면 계획은 사라집니다.";
+    return { tone: "plan", text: `승인을 기다리는 주문 계획이 ${d.pending.length}건 있습니다`, sub: `승인한 계획만 주문으로 나갑니다. ${by}` };
+  }
   if (d.risk.daily_used >= 0.8) return { tone: "danger", text: `오늘 손실이 한도의 ${pct(d.risk.daily_used, 0, false)}에 닿았습니다`, sub: "한도를 다 쓰면 오늘은 새 매수를 멈춥니다. 보유 종목의 손절·익절은 계속 지킵니다." };
   if (status?.state === "stopped") return { tone: "warn", text: "엔진이 정지해 있습니다", sub: "새 주문은 나가지 않습니다. 켜려면 위쪽의 '엔진 켜기'를 누르세요." };
   if (status?.state === "paused") return { tone: "warn", text: "일시정지 중입니다", sub: "새 매수만 멈췄습니다. 보유 종목의 손절·익절은 계속 지킵니다." };
@@ -106,7 +116,8 @@ function Verdict({ d, status }: { d: Dashboard; status: Status | undefined }) {
 /** 한도 계기. lead는 첫 화면에서 가장 먼저 읽혀야 하는 계기(오늘 손실 한도)로, 글자와 막대를 한 단계 키운다. */
 function Gauge({ label, used, value, hint, lead = false }: { label: string; used: number; value: string; hint: string; lead?: boolean }) {
   const ratio = Math.max(0, Math.min(1, Number.isFinite(used) ? used : 0));
-  const level = ratio >= 0.8 ? "높음" : ratio >= 0.5 ? "보통" : "여유";
+  // DESIGN.md: 50% 이상은 주의, 80% 이상은 위험 배지
+  const level = ratio >= 0.8 ? "위험" : "주의";
   return (
     <div className={cx("min-w-0", lead && "col-span-2 lg:col-span-1")}>
       <dt className={cx("text-ink-muted", lead ? "text-body-sm font-semibold" : "text-label")}>{label}</dt>
@@ -114,7 +125,7 @@ function Gauge({ label, used, value, hint, lead = false }: { label: string; used
         {value}
         {ratio >= 0.5 && <Badge tone={ratio >= 0.8 ? "danger" : "warning"}>{level}</Badge>}
       </dd>
-      <dd aria-hidden className={cx("mt-2 overflow-hidden rounded-full bg-surface-sunken", lead ? "h-2" : "h-1")}>
+      <dd aria-hidden className={cx("mt-2 overflow-hidden rounded-full bg-divider", lead ? "h-2" : "h-1")}>
         <span className={cx("block h-full rounded-full transition-[width] duration-(--duration-base)", ratio >= 0.8 ? "bg-danger" : ratio >= 0.5 ? "bg-warning" : "bg-success")} style={{ width: `${ratio > 0 ? Math.max(ratio * 100, 3) : 0}%` }} />
       </dd>
       <dd className="num mt-1 text-label text-ink-muted">{hint}</dd>
@@ -133,9 +144,12 @@ function Approvals({ pendingCount, stable, plans, className }: { pendingCount: n
           <h2 id="approvals-title" className="text-h6 font-bold text-ink">
             승인 대기 {pendingCount}건
           </h2>
-          {kept.slice(0, 4).map((card) => (
-            <ApprovalCard key={card.id} card={card} outcome={outcomes[card.id]} onDecided={onDecided} />
-          ))}
+          {/* 한 줄로 쌓는 화면에서는 카드를 두 장씩, 오른쪽 열(1400px 이상)에서는 한 장씩 */}
+          <div className="grid gap-3 md:max-[1399px]:grid-cols-2">
+            {kept.slice(0, 4).map((card) => (
+              <ApprovalCard key={card.id} card={card} outcome={outcomes[card.id]} onDecided={onDecided} />
+            ))}
+          </div>
           {kept.length > 4 && (
             <Link to="/auto" className="inline-flex min-h-11 items-center text-body-sm font-semibold text-accent">
               나머지 {kept.length - 4}건 모두 보기
@@ -144,7 +158,7 @@ function Approvals({ pendingCount, stable, plans, className }: { pendingCount: n
         </>
       )}
       {plans.length > 0 && (
-        <div className="rounded-lg border border-dashed border-divider bg-surface p-4">
+        <div className="rounded-lg border border-divider bg-surface p-4">
           <h2 id={kept.length === 0 ? "approvals-title" : undefined} className="text-h6 font-bold text-ink">
             다음 거래일에 나갈 주문 {plans.length}건
           </h2>
@@ -215,7 +229,7 @@ function WatchItem({ p }: { p: PositionRow }) {
       <p className="num text-label text-ink-muted">
         {num(p.qty)}주 · 평균 {num(p.avg_price)}원 · 현재 {num(p.price)}원 · {heldText(p.days_held)}
       </p>
-      <div aria-hidden className="relative mt-3 h-1 rounded-full bg-surface-sunken">
+      <div aria-hidden className="relative mt-3 h-1 rounded-full bg-divider">
         <span className="absolute top-1/2 h-3 w-px -translate-y-1/2 bg-ink-muted" style={{ left: at(p.avg_price) }} />
         <span className="absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-surface bg-ink" style={{ left: at(p.price) }} />
       </div>
@@ -313,7 +327,7 @@ export function RegimePanel({ regime }: { regime: RegimeFull }) {
               <span className="text-ink">{c.name}</span>
               <span className="num font-semibold text-ink">{num(c.score)}</span>
             </div>
-            <div aria-hidden className="mt-1 h-1 overflow-hidden rounded-full bg-surface-sunken">
+            <div aria-hidden className="mt-1 h-1 overflow-hidden rounded-full bg-divider">
               <span className="block h-full rounded-full bg-ink-muted" style={{ width: `${Math.max(0, Math.min(100, c.score))}%` }} />
             </div>
             <p className="num mt-1 text-label text-ink-muted">{c.detail}</p>
