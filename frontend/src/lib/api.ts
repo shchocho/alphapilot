@@ -28,7 +28,26 @@ export function setUnauthenticatedHandler(handler: () => void): void {
   onUnauthenticated = handler;
 }
 
+/** GitHub Pages 데모(vite build --mode demo): 서버 없이 미리 저장한 응답(public/demo/*.json)만 읽는다. */
+export const DEMO = import.meta.env.MODE === "demo";
+
+/** backend/scripts/export_demo.py의 key()와 같은 규칙. */
+export const demoKey = (url: string) => url.replace(/^\/api\//, "").replace(/[^A-Za-z0-9-]/g, "_");
+
+async function demoRequest<T>(method: string, url: string): Promise<T> {
+  if (method !== "GET") throw new ApiError(403, "demo", "데모 화면이라 바꿀 수 없습니다. 내 PC에서 실행하면 쓸 수 있습니다");
+  const search = /^\/api\/stocks\/search\?q=(.*)$/.exec(url);
+  const response = await fetch(`${import.meta.env.BASE_URL}demo/${demoKey(search ? "/api/stocks/_all" : url)}.json`).catch(() => null);
+  if (!response?.ok) throw new ApiError(404, "demo", "데모에 저장되지 않은 화면입니다");
+  const data = await response.json();
+  if (!search) return data as T;
+  const q = decodeURIComponent(search[1]).trim().toLowerCase();
+  const results = (data as { code: string; name: string }[]).filter((s) => s.name.toLowerCase().includes(q) || s.code.startsWith(q));
+  return { results: results.slice(0, 12) } as T;
+}
+
 async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
+  if (DEMO) return demoRequest<T>(method, url);
   const headers: Record<string, string> = { Accept: "application/json" };
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (method !== "GET") headers["x-csrf-token"] = csrfToken;

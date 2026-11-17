@@ -59,6 +59,20 @@ cd backend && uv run ruff check .
 cd frontend && npm run typecheck && npm run test && npm run build
 ```
 
+## 데모 사이트(GitHub Pages)
+
+https://shchocho.github.io/alphapilot/ 는 서버 없이 화면만 보여주는 **읽기 전용 데모**다. 시뮬레이션을 한 번 돌려 저장한 응답을 읽기만 하고, 엔진 조작·설정 변경 같은 동작은 막혀 있다. 데모를 새로 만들려면:
+
+```bash
+cd backend && uv run python scripts/export_demo.py 2026-07-01
+```
+
+```bash
+cd frontend && npm run build:demo
+```
+
+그다음 `frontend/dist-demo`를 `gh-pages` 브랜치에 올린다.
+
 ## 서버에 올리기
 
 [docs/deploy.md](docs/deploy.md)를 따른다. 요약하면 서울 리전 리눅스 서버 한 대에 Docker로 올리고 Caddy가 HTTPS를 맡는다. 키움 연동은 [docs/kiwoom-setup.md](docs/kiwoom-setup.md).

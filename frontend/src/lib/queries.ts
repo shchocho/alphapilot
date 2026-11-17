@@ -3,7 +3,7 @@
 import { QueryClient, useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { toast } from "sonner";
-import { api, ApiError, errorMessage } from "./api";
+import { api, ApiError, DEMO, errorMessage } from "./api";
 import type {
   AuthState, BacktestResult, BacktestRun, Committee, Dashboard, DecisionDetail, IntentCard, Portfolio, Screener, SettingsView,
   Status, StockDetail,
@@ -89,7 +89,7 @@ export function notifyError(error: unknown): void {
 /** 서버가 보내는 실시간 알림. 상태는 바로, 장부 변화는 잠깐 모아서 다시 읽는다. */
 export function useLiveEvents(enabled: boolean): void {
   useEffect(() => {
-    if (!enabled || typeof EventSource === "undefined") return;
+    if (!enabled || DEMO || typeof EventSource === "undefined") return;
     const source = new EventSource("/api/events");
     let timer: number | undefined;
     source.onmessage = (event) => {

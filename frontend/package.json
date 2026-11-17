@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "build:demo": "vite build --mode demo --base /alphapilot/ --outDir dist-demo && node -e \"require('fs').copyFileSync('dist-demo/index.html','dist-demo/404.html')\"",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "preview": "vite preview"

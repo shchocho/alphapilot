@@ -28,3 +28,7 @@ frontend/dist/
 .impeccable/review/
 .impeccable/tmp/
 .impeccable/hook.cache.json
+
+# GitHub Pages 데모(scripts/export_demo.py, npm run build:demo)가 만든 파일
+frontend/public/demo/
+frontend/dist-demo/
