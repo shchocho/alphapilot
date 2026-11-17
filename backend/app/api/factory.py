@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, FastAPI, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field, ValidationError
+from sqlalchemy import text
 from sqlalchemy.orm import Session, sessionmaker
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
@@ -24,6 +25,7 @@ from app.api import views
 from app.api.security import (
     CSRF_HEADER,
     HSTS,
+    IDLE_TIMEOUT,
     MAX_BODY_BYTES,
     SECURITY_HEADERS,
     SESSION_COOKIE,
@@ -42,6 +44,8 @@ from app.engine.service import EngineError, EngineService, Scheduler
 from app.journal.ledger import row_to_dict
 from app.risk.limits import RiskLimits
 from app.store.db import BacktestRow, make_engine, make_session_factory
+from app.store.lock import EngineLock
+from app.store.maintenance import MaintenancePlan, run_daily
 from app.techniques.registry import ENTRY_KEYS
 
 log = logging.getLogger("alphapilot")
@@ -156,18 +160,26 @@ def create_app(
 ) -> FastAPI:
     config = config or get_settings()
     factory = session_factory or make_session_factory(make_engine(config.db_path))
+    db_engine = factory.kw.get("bind")
     svc = service or EngineService(config, factory)
     auth = Auth(config, factory)
-    scheduler = Scheduler(svc)
+    plan = MaintenancePlan(backup_dir=config.backup_dir, backup_keep=config.backup_keep, idle_timeout=IDLE_TIMEOUT)
+    scheduler = Scheduler(svc, maintenance=(lambda now: run_daily(db_engine, factory, plan, now)) if db_engine is not None else None)
+    engine_lock = EngineLock(config.lock_path)
     backtest_lock = asyncio.Lock()
 
     @contextlib.asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        svc.startup()
         if run_scheduler:
-            scheduler.start()
-        yield
-        await scheduler.stop()
+            engine_lock.acquire()  # 엔진(스케줄러)은 데이터 폴더당 하나만. 이미 돌고 있으면 여기서 멈춘다
+        try:
+            svc.startup()
+            if run_scheduler:
+                scheduler.start()
+            yield
+            await scheduler.stop()
+        finally:
+            engine_lock.release()
 
     app = FastAPI(title="AlphaPilot", docs_url="/api/docs" if not config.is_prod else None, redoc_url=None,
                   openapi_url="/api/openapi.json" if not config.is_prod else None, lifespan=lifespan)
@@ -219,8 +231,21 @@ def create_app(
     public = APIRouter(prefix="/api")
 
     @public.get("/health")
-    def health() -> dict[str, Any]:
-        return {"ok": True, "time": now_kst().isoformat(timespec="seconds")}
+    def health(response: Response) -> dict[str, Any]:
+        """컨테이너 상태 검사·외부 감시용. 로그인 없이 열려 있으므로 상태 이름만 알려 준다."""
+        now = now_kst()
+        try:
+            with factory() as s:
+                s.execute(text("SELECT 1"))
+            db_ok = True
+        except Exception:  # noqa: BLE001 - 어떤 DB 오류든 '비정상'으로 알린다
+            log.exception("상태 검사: DB 접근 실패")
+            db_ok = False
+        scheduler_ok, scheduler_state = scheduler.health(now)
+        ok = db_ok and scheduler_ok
+        if not ok:
+            response.status_code = 503
+        return {"ok": ok, "time": now.isoformat(timespec="seconds"), "checks": {"db": "ok" if db_ok else "error", "scheduler": scheduler_state}}
 
     @public.get("/auth/state")
     def auth_state(request: Request) -> dict[str, Any]:

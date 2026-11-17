@@ -87,7 +87,8 @@ def user(ctx) -> Session:
 
 def test_health_is_public_but_everything_else_needs_login(ctx):
     client, _, _ = ctx
-    assert client.get("/api/health").json()["ok"] is True
+    health = client.get("/api/health").json()
+    assert health["ok"] is True and health["checks"] == {"db": "ok", "scheduler": "off"}
     for url in ("/api/status", "/api/dashboard", "/api/portfolio", "/api/settings", "/api/ledger", "/api/events", "/api/backtests"):
         r = client.get(url)
         assert r.status_code == 401, url

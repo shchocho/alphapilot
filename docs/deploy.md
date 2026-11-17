@@ -29,14 +29,20 @@ docker compose logs -f app
 
 ## 운영
 
-- **엔진은 하나만.** `app` 서비스를 여러 개로 늘리지 않는다. 주문이 두 번 나갈 수 있다.
-- **백업.** `sh deploy/backup.sh`가 돌고 있는 채로 데이터베이스 복사본을 `backups/`에 만든다. 하루 한 번 cron에 걸고, 복사본은 서버 밖으로 옮겨 둔다. 복사본에는 비밀번호 해시와 매매 기록이 들어 있다.
-- **업데이트.** 코드를 바꾼 뒤 `docker compose up -d --build`. 서버가 다시 시작되면 화면 위에 확인 안내가 뜨고, 확인하기 전까지 모든 주문 계획이 승인을 기다린다.
+하루 흐름, 점검 결과, 복구 순서는 [server-ops.md](server-ops.md)에 있다.
+
+- **엔진은 하나만.** `app` 서비스를 여러 개로 늘리지 않는다. 주문이 두 번 나갈 수 있다. 늘려도 둘째는 데이터 폴더 잠금(`/data/engine.lock`)에 막혀 시작하지 않는다.
+- **설정 점검.** 운영(`AP_ENV=prod`)에서는 시작하기 전에 `.env`를 점검하고, 빠진 것이 있으면 무엇을 고칠지 로그에 남기고 멈춘다. `docker compose logs app`로 본다.
+- **백업.** 거래일 처리 뒤 하루 한 번 앱이 `/data/backups/`에 DB 사본을 만든다(`AP_BACKUP_KEEP`, 기본 14개). 같은 서버 안이므로, `sh deploy/backup.sh`를 하루 한 번 cron에 걸어 사본을 `backups/`(저장소 폴더)로 꺼낸 뒤 서버 밖으로 옮긴다. 사본에는 비밀번호 해시와 매매 기록이 들어 있다.
+- **업데이트.** 코드를 바꾼 뒤 `docker compose up -d --build`. 표 구조가 바뀌는 업데이트면 시작할 때 `/data/backups/`에 사본을 먼저 남기고 DB를 올린다. 서버가 다시 시작되면 화면 위에 확인 안내가 뜨고, 확인하기 전까지 모든 주문 계획이 승인을 기다린다.
+- **되돌리기.** 옛 버전 코드로 되돌릴 때, DB가 이미 새 버전으로 올라갔으면 앱이 시작하지 않는다. 업데이트 직전 사본(`alphapilot-pre-migrate-*.db`)으로 DB도 함께 되돌린다.
+- **상태 확인.** `/api/health`가 DB와 스케줄러를 본다. 비정상이면 503이고 `docker compose ps`에 unhealthy로 보인다. 바깥 감시 서비스에도 이 주소를 건다.
+- **로그.** 컨테이너 로그는 10MB씩 5개까지 남는다. 자세히 보려면 `.env`에 `AP_LOG_LEVEL=DEBUG`.
 - **`AP_SECRET_KEY`는 바꾸지 않는다.** 바꾸면 인증 앱 비밀값을 풀 수 없어 로그인 등록을 다시 해야 한다.
 - **로그인 분실.** 비밀번호나 인증 앱을 잃으면 데이터베이스의 `users` 표를 비우고 처음 등록을 다시 한다(매매 기록은 남는다).
 
 ## 확인할 것
 
-- `https://<도메인>/api/health`가 `{"ok": true}`를 돌려준다.
+- `https://<도메인>/api/health`가 `{"ok": true, ..., "checks": {"db": "ok", "scheduler": "ok"}}`를 돌려준다.
 - 로그인하지 않은 채 `https://<도메인>/api/status`는 401이다.
 - 응답 머리에 `Strict-Transport-Security`와 `Content-Security-Policy`가 있다.

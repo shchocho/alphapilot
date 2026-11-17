@@ -1,6 +1,7 @@
 """SQLite(WAL) 연결과 테이블 정의.
 
-단일 프로세스·단일 워커 전제다. 엔진이 두 개 뜨면 주문이 중복될 수 있으므로 워커 수를 늘리지 않는다.
+단일 프로세스·단일 워커 전제다. 엔진이 두 개 뜨면 주문이 중복될 수 있으므로 워커 수를 늘리지 않는다(store/lock.py가 막는다).
+표를 바꿀 때는 store/migrate.py의 안내대로 마이그레이션을 더한다. create_all은 기존 표를 바꾸지 않는다.
 """
 
 from __future__ import annotations
@@ -13,8 +14,6 @@ from sqlalchemy import BigInteger, Boolean, Float, Integer, String, Text, create
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 from sqlalchemy.pool import StaticPool
-
-SCHEMA_VERSION = 1
 
 
 class Base(DeclarativeBase):
@@ -237,7 +236,9 @@ def make_engine(db_path: Path | str | None) -> Engine:
         cur.execute("PRAGMA busy_timeout=5000")
         cur.close()
 
-    Base.metadata.create_all(engine)
+    from app.store.migrate import migrate  # migrate가 이 모듈의 표를 쓰므로 여기서 불러온다
+
+    migrate(engine, Base.metadata, backup_dir=None if db_path is None else Path(db_path).parent / "backups")
     return engine
 
 

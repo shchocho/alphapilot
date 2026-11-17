@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.committee.llm import DEFAULT_MODEL, EFFORTS, SELECTABLE_MODELS
@@ -68,6 +68,27 @@ class EngineSettings(BaseModel):
         return CostModel(self.commission_rate, self.sell_tax_rate, self.slippage_rate)
 
 
+WHOLE = "(전체)"
+
+
+def tolerant_load[M: BaseModel](model: type[M], raw: Any) -> tuple[M, list[str]]:
+    """저장된 값을 모델로 읽는다. 맞지 않는 필드만 기본값으로 되돌리고, 그래도 안 되면 전체를 기본값으로 한다.
+
+    코드가 바뀌어 예전에 저장한 값이 더는 허용되지 않을 때(없어진 모델 이름, 좁아진 범위) 서버가 멈추지 않게 하기 위해서다.
+    없어진 필드는 모델이 무시하므로 여기서 따로 다루지 않는다.
+    """
+    if not isinstance(raw, dict):
+        return model(), ([] if raw is None else [WHOLE])
+    try:
+        return model.model_validate(raw), []
+    except ValidationError as exc:
+        bad = sorted({str(err["loc"][0]) for err in exc.errors() if err["loc"]})
+    try:
+        return model.model_validate({k: v for k, v in raw.items() if k not in bad}), bad or [WHOLE]
+    except ValidationError:
+        return model(), [WHOLE]
+
+
 class KVStore:
     def __init__(self, session_factory: sessionmaker[Session]) -> None:
         self._sf = session_factory
@@ -88,13 +109,20 @@ class KVStore:
                 row.value, row.updated_at = payload, stamp
 
     def load_settings(self) -> EngineSettings:
-        return EngineSettings.model_validate(self.get("engine_settings", {}))
+        return self.load_settings_checked()[0]
+
+    def load_settings_checked(self) -> tuple[EngineSettings, list[str]]:
+        """(설정, 기본값으로 되돌린 필드). 저장된 값이 지금 버전에서 맞지 않아도 엔진이 멈추지 않게 한다."""
+        return tolerant_load(EngineSettings, self.get("engine_settings", {}))
 
     def save_settings(self, settings: EngineSettings) -> None:
         self.set("engine_settings", settings.model_dump())
 
     def load_limits(self) -> RiskLimits:
-        return RiskLimits.model_validate(self.get("risk_limits", {}))
+        return self.load_limits_checked()[0]
+
+    def load_limits_checked(self) -> tuple[RiskLimits, list[str]]:
+        return tolerant_load(RiskLimits, self.get("risk_limits", {}))
 
     def save_limits(self, limits: RiskLimits) -> None:
         self.set("risk_limits", limits.model_dump())

@@ -16,7 +16,8 @@ ENV PYTHONUNBUFFERED=1 \
     UV_LINK_MODE=copy \
     UV_COMPILE_BYTECODE=1 \
     TZ=Asia/Seoul
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+# uv는 버전을 고정한다(latest는 빌드할 때마다 바뀔 수 있다).
+COPY --from=ghcr.io/astral-sh/uv:0.13.6 /uv /usr/local/bin/uv
 WORKDIR /app
 
 # 의존성은 잠금 파일 그대로 설치한다(개발용 도구 제외).
@@ -39,6 +40,7 @@ ENV AP_ENV=prod \
 EXPOSE 8000
 VOLUME ["/data"]
 
+# /api/health는 DB 접근과 스케줄러 루프가 살아 있는지 본다. 비정상이면 503이고 urlopen이 예외를 내므로 실패로 잡힌다.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=3 \
     CMD python -c "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4).status == 200 else 1)"
 

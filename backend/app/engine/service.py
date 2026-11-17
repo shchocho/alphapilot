@@ -11,7 +11,7 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import Callable
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Any
 
 from sqlalchemy import func, select
@@ -55,6 +55,8 @@ FILL_SUMMARY = {
     "liquidate": "전량 매도", "manual": "수동 주문",
 }
 LEDGER_EPOCH_KEY = "ledger_epoch:sim"
+# 시뮬레이션이 최신 일봉까지 따라온 마지막 날. 서버가 멈췄다 켜졌을 때 '따라가던 중'이었는지(밀린 날을 자동으로 처리할지) 가른다.
+CAUGHT_UP_KEY = "sim_caught_up_day"
 PROTECTIVE_REASONS = frozenset({"stop", "trail_stop", "target", "next_open_exit", "time_exit"})
 
 
@@ -235,8 +237,15 @@ class EngineService:
     # ── 엔진 제어 ──────────────────────────────────────────────────────────
 
     def startup(self) -> None:
-        """프로세스 시작 시 호출. 가동 중에 꺼졌다 켜졌으면 안전한 쪽(승인 대기)으로 돌린다."""
-        st = self.settings()
+        """프로세스 시작 시 호출. 저장된 설정을 지금 버전에 맞추고, 가동 중에 꺼졌다 켜졌으면 안전한 쪽(승인 대기)으로 돌린다."""
+        st, repaired = self.kv.load_settings_checked()
+        if repaired:
+            self.kv.save_settings(st)
+            self._log(st.env, Event("settings", f"저장된 엔진 설정 중 지금 버전에서 쓸 수 없는 값을 기본값으로 되돌렸습니다: {', '.join(repaired)}"))
+        limits, repaired_limits = self.kv.load_limits_checked()
+        if repaired_limits:
+            self.kv.save_limits(limits)
+            self._log(st.env, Event("settings", f"저장된 리스크 한도 중 쓸 수 없는 값을 기본값으로 되돌렸습니다: {', '.join(repaired_limits)}"))
         self.load_market()
         if st.state == "running" and not st.resume_check_required:
             st.resume_check_required = True
@@ -428,7 +437,17 @@ class EngineService:
                 self.bus.publish("status")
         if not results:
             raise EngineError("처리할 새 거래일이 없습니다. 장 마감 뒤 데이터를 갱신하면 다음 거래일을 처리할 수 있습니다")
+        sim_day, behind = self.sim_lag()
+        if sim_day is not None and behind == 0:
+            self.kv.set(CAUGHT_UP_KEY, sim_day)
         return results
+
+    def sim_lag(self) -> tuple[str | None, int]:
+        """(시뮬레이션이 마지막으로 처리한 거래일, 최신 일봉보다 며칠 뒤인지)."""
+        st = self.settings()
+        with self.sf() as s, s.begin():
+            sim_day = repo.get_account(s, "sim", st.sim_initial_cash).sim_day
+        return sim_day, self._behind_days(sim_day)
 
     async def _advance_one(self, day: date, *, first: bool, auto_approve: bool) -> dict[str, Any]:
         assert self.market is not None
@@ -704,28 +723,88 @@ class EngineService:
         return 0 if t is None else len(self.market.calendar) - 1 - t
 
 
-class Scheduler:
-    """백그라운드 루프: 장 마감 뒤 일봉을 갱신하고, 시뮬레이션이 최신 상태면 새 거래일을 처리한다."""
+SCHEDULER_DONE_KEY = "scheduler_done_day"  # 일봉 갱신과 거래일 처리를 마친 날(재시작해도 같은 날 다시 하지 않는다)
+MAINTENANCE_DONE_KEY = "maintenance_done_day"
 
-    def __init__(self, service: EngineService, *, interval: float = 60.0) -> None:
+
+class Scheduler:
+    """백그라운드 루프. 서버 한 대가 사람 없이 24시간 돌 때를 기준으로 짰다.
+
+    거래일 장 마감(15:45) 뒤:
+      1) 일봉을 갱신한다. 오늘 봉이 아직 없거나 갱신이 실패하면 RETRY_EVERY마다 다시 시도하고,
+         GIVE_UP_AT까지도 못 받으면 원장에 오류를 남기고 그날은 멈춘다(사람이 확인해야 한다).
+      2) 시뮬레이션이 최신 일봉을 따라가던 중이면 밀린 거래일을 처리한다. 서버가 멈춰 며칠 밀렸어도
+         MAX_CATCH_UP일까지는 차례로 따라잡는다. 과거 구간을 재생하던 중이면 자동으로 진행하지 않는다.
+      3) 하루 한 번 DB 점검(백업·정리·무결성)을 한다.
+    health()는 루프가 살아 있는지를 /api/health에 알려 준다.
+    """
+
+    REFRESH_AFTER = time(15, 45)
+    RETRY_EVERY = timedelta(minutes=15)
+    GIVE_UP_AT = time(23, 0)
+    MAX_CATCH_UP = 5
+    STALE_AFTER = timedelta(minutes=5)  # 쉬는 중 마지막 틱이 이보다 오래되면 멈춘 것으로 본다
+    BUSY_LIMIT = timedelta(minutes=60)  # 한 틱(갱신·처리)이 이보다 오래 걸리면 걸린 것으로 본다
+    STOP_GRACE = 45.0  # 끌 때 진행 중인 틱이 끝나기를 기다리는 초(docker-compose의 stop_grace_period보다 짧게)
+
+    def __init__(self, service: EngineService, *, interval: float = 60.0,
+                 maintenance: Callable[[datetime], dict[str, Any]] | None = None) -> None:
         self._service = service
         self._interval = interval
+        self._maintenance = maintenance
         self._task: asyncio.Task[None] | None = None
-        self._last_refresh: date | None = None
+        self._stopping = False
+        self._wake = asyncio.Event()
+        self._retry_at: datetime | None = None
+        self._warned_day: date | None = None
+        self.tick_started: datetime | None = None
+        self.tick_finished: datetime | None = None
 
     def start(self) -> None:
         if self._task is None:
+            self._stopping = False
+            self._wake.clear()
             self._task = asyncio.create_task(self._run(), name="alphapilot-scheduler")
 
-    async def stop(self) -> None:
-        if self._task is not None:
-            self._task.cancel()
+    async def stop(self, grace: float | None = None) -> None:
+        """진행 중인 틱(일봉 갱신·거래일 처리)은 끝까지 하게 두고 멈춘다. grace초 안에 안 끝나면 그때 끊는다.
+
+        거래일 처리 도중에 끊으면 체결은 반영됐는데 장후 심의·주문 계획은 없는 날이 생길 수 있어서다.
+        """
+        task = self._task
+        if task is None:
+            return
+        self._stopping = True
+        self._wake.set()
+        try:
+            await asyncio.wait_for(asyncio.shield(task), timeout=self.STOP_GRACE if grace is None else grace)
+        except TimeoutError:
+            log.warning("스케줄러가 %s초 안에 끝나지 않아 중단합니다", self.STOP_GRACE if grace is None else grace)
+            task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
-                await self._task
+                await task
+        except asyncio.CancelledError:
+            task.cancel()
+            raise
+        finally:
             self._task = None
 
+    def health(self, now: datetime) -> tuple[bool, str]:
+        """(정상 여부, 상태). 상태: off · starting · ok · busy · stale · stuck · dead."""
+        if self._task is None:
+            return True, "off"
+        if self._task.done():
+            return False, "dead"
+        if self.tick_started is None:
+            return True, "starting"
+        if self.tick_finished is None or self.tick_finished < self.tick_started:
+            within = now - self.tick_started <= self.BUSY_LIMIT
+            return within, "busy" if within else "stuck"
+        fresh = now - self.tick_finished <= self.STALE_AFTER
+        return fresh, "ok" if fresh else "stale"
+
     async def _run(self) -> None:
-        while True:
+        while not self._stopping:
             try:
                 await self.tick(clock.now_kst())
             except asyncio.CancelledError:
@@ -733,17 +812,95 @@ class Scheduler:
             except Exception as exc:  # noqa: BLE001 - 루프는 죽지 않고 오류를 기록한다
                 log.exception("스케줄러 오류")
                 self._service.last_error = f"{type(exc).__name__}: {exc}"
-            await asyncio.sleep(self._interval)
+            if self._stopping:
+                break
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(self._wake.wait(), timeout=self._interval)
 
     async def tick(self, now: datetime) -> None:
+        self.tick_started = now
+        try:
+            await self._tick(now)
+        finally:
+            self.tick_finished = now
+
+    async def _tick(self, now: datetime) -> None:
         service = self._service
         st = service.settings()
         today = now.date()
-        after_close = now.time() >= (datetime.min + timedelta(hours=15, minutes=45)).time()
-        if not clock.is_trading_day(today, service._holidays(st)) or not after_close or self._last_refresh == today:
+        if not clock.is_trading_day(today, service._holidays(st)) or now.time() < self.REFRESH_AFTER:
             return
-        self._last_refresh = today
-        await service.refresh_data()
-        # 최신 일봉 바로 전날까지 따라와 있을 때만 자동으로 하루를 처리한다(과거 재생 중에는 자동 진행하지 않는다).
-        if st.env == "sim" and st.state != "stopped" and service._behind_days(service.status()["sim_day"]) == 1:
-            await service.advance(1)
+        if service.kv.get(SCHEDULER_DONE_KEY) == today.isoformat():
+            return
+        if self._retry_at is not None and now < self._retry_at:
+            return
+
+        problem = ""
+        try:
+            await service.refresh_data()
+            if service.market is None or service.market.last_day() < today:
+                problem = "오늘 일봉이 아직 올라오지 않았습니다"
+        except Exception as exc:  # noqa: BLE001 - 네트워크·공급자 오류는 다시 시도한다
+            log.warning("일봉 갱신 실패: %s", exc)
+            problem = f"일봉 갱신 실패({type(exc).__name__}: {exc})"
+
+        if problem:
+            if now.time() >= self.GIVE_UP_AT:
+                self._retry_at = None
+                service.kv.set(SCHEDULER_DONE_KEY, today.isoformat())
+                service._log(st.env, Event("error", f"{today} {problem}. 오늘 자동 처리를 멈춥니다. 데이터를 갱신한 뒤 직접 진행하세요"))
+            else:
+                self._retry_at = now + self.RETRY_EVERY
+                if self._warned_day != today:
+                    self._warned_day = today
+                    minutes = int(self.RETRY_EVERY.total_seconds() // 60)
+                    service._log(st.env, Event("data", f"{problem}. {minutes}분마다 다시 시도합니다"))
+            return
+
+        self._retry_at = None
+        service.kv.set(SCHEDULER_DONE_KEY, today.isoformat())
+        try:
+            await self._follow(service.settings())
+        finally:
+            await self._maintain(now)
+
+    async def _follow(self, st: EngineSettings) -> None:
+        """시뮬레이션이 최신을 따라가던 중이면 밀린 거래일을 처리한다."""
+        service = self._service
+        if st.env != "sim" or st.state == "stopped":
+            return
+        sim_day, behind = service.sim_lag()
+        if sim_day is None or behind <= 0:
+            return
+        following = behind == 1 or sim_day == service.kv.get(CAUGHT_UP_KEY)
+        if not following:
+            return  # 과거 구간 재생 중: 사람이 진행한다
+        if behind > self.MAX_CATCH_UP:
+            service._log("sim", Event("engine", f"시뮬레이션이 {behind}거래일 밀렸습니다. 자동으로는 {self.MAX_CATCH_UP}일까지만 따라잡습니다. "
+                                                "자동매매 화면에서 이어서 진행하세요"))
+            return
+        if behind > 1:
+            service._log("sim", Event("engine", f"서버가 멈춘 사이 밀린 {behind}거래일을 차례로 처리합니다"))
+        await service.advance(behind)
+
+    async def _maintain(self, now: datetime) -> None:
+        service = self._service
+        if self._maintenance is None or service.kv.get(MAINTENANCE_DONE_KEY) == now.date().isoformat():
+            return
+        service.kv.set(MAINTENANCE_DONE_KEY, now.date().isoformat())
+        env = service.settings().env
+        try:
+            report = await asyncio.to_thread(self._maintenance, now)
+        except Exception as exc:  # noqa: BLE001 - 점검 실패가 매매를 막지는 않는다. 기록만 남긴다
+            log.exception("일일 점검 실패")
+            service._log(env, Event("error", f"일일 DB 점검 실패: {type(exc).__name__}: {exc}"))
+            return
+        integrity = report.get("integrity", "ok")
+        parts = [f"백업 {report['backup']}" if report.get("backup") else "백업 안 함",
+                 f"만료 세션 {report.get('sessions', 0)}건·로그인 기록 {report.get('login_attempts', 0)}건 정리",
+                 f"무결성 {integrity}"]
+        if integrity != "ok":
+            service._log(env, Event("error", "일일 DB 점검에서 무결성 문제를 찾았습니다: " + " · ".join(parts)))
+        else:
+            service._log(env, Event("engine", "일일 DB 점검: " + " · ".join(parts)))
+        log.info("일일 점검: %s", report)

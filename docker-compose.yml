@@ -26,13 +26,26 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
-    # 엔진은 한 벌만 돌아야 한다. 이 서비스를 여러 개로 늘리지 않는다.
+    # 엔진은 한 벌만 돌아야 한다. 이 서비스를 여러 개로 늘리지 않는다(늘려도 둘째는 데이터 폴더 잠금에 막혀 뜨지 않는다).
     deploy:
       replicas: 1
+    # 끌 때 진행 중인 일봉 갱신·거래일 처리를 마무리할 시간을 준다.
+    stop_grace_period: 60s
+    # 로그가 디스크를 채우지 않게 크기와 개수를 제한한다(약 50MB).
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
 
   caddy:
     image: caddy:2
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     depends_on:
       - app
     ports:
