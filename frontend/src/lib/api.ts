@@ -34,7 +34,32 @@ export const DEMO = import.meta.env.MODE === "demo";
 /** backend/scripts/export_demo.py의 key()와 같은 규칙. */
 export const demoKey = (url: string) => url.replace(/^\/api\//, "").replace(/[^A-Za-z0-9-]/g, "_");
 
+// 데모 로그인 상태. 새로 고쳐도 유지되게 sessionStorage에 두되, 못 쓰면 이 탭 메모리로만 기억한다.
+let demoAuthed = (() => {
+  try {
+    return sessionStorage.getItem("ap-demo-auth") === "1";
+  } catch {
+    return false;
+  }
+})();
+
+function setDemoAuthed(value: boolean): void {
+  demoAuthed = value;
+  try {
+    sessionStorage.setItem("ap-demo-auth", value ? "1" : "");
+  } catch {
+    /* 저장하지 못해도 이 탭에서는 유지된다 */
+  }
+}
+
 async function demoRequest<T>(method: string, url: string): Promise<T> {
+  if (url === "/api/auth/state") {
+    return { setup: "done", authenticated: demoAuthed, csrf: demoAuthed ? "demo" : null, elevated: demoAuthed, setup_token_required: false } as T;
+  }
+  if (url === "/api/auth/login" || url === "/api/auth/logout") {
+    setDemoAuthed(url === "/api/auth/login");
+    return { csrf: "demo" } as T;
+  }
   if (method !== "GET") throw new ApiError(403, "demo", "데모 화면이라 바꿀 수 없습니다. 내 PC에서 실행하면 쓸 수 있습니다");
   const search = /^\/api\/stocks\/search\?q=(.*)$/.exec(url);
   const response = await fetch(`${import.meta.env.BASE_URL}demo/${demoKey(search ? "/api/stocks/_all" : url)}.json`).catch(() => null);

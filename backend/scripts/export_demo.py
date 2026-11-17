@@ -106,7 +106,6 @@ def main() -> None:
         saved["/api/stocks/_all"] = [{"code": i.code, "name": i.name, "market": i.market, "sector": i.sector}
                                      for i in market.info.values() if i.code in market.stocks]
 
-    saved["/api/auth/state"] = {"setup": "done", "authenticated": True, "csrf": "demo", "elevated": True, "setup_token_required": False}
     sessions = saved["/api/auth/sessions"]
     sessions["sessions"] = []
     for row in sessions["audit"]:

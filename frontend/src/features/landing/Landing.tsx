@@ -443,9 +443,9 @@ function Product() {
         </div>
         <div className="lg:col-span-8">
           <picture className="block overflow-hidden rounded-lg border border-divider bg-surface">
-            <source media="(max-width: 767px)" srcSet={`/landing/console-mobile-${tone}.webp`} width={750} height={1100} />
+            <source media="(max-width: 767px)" srcSet={`${import.meta.env.BASE_URL}landing/console-mobile-${tone}.webp`} width={750} height={1100} />
             <img
-              src={`/landing/console-desktop-${tone}.webp`}
+              src={`${import.meta.env.BASE_URL}landing/console-desktop-${tone}.webp`}
               width={2160}
               height={1350}
               loading="lazy"

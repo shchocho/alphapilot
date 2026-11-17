@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Button, ErrorState, Field, Notice, SkeletonRows, TextInput } from "@/components/ui";
-import { api, errorMessage, setCsrf, setUnauthenticatedHandler } from "@/lib/api";
+import { api, DEMO, errorMessage, setCsrf, setUnauthenticatedHandler } from "@/lib/api";
 import { queryClient, useAuthState } from "@/lib/queries";
 import { endSession } from "@/lib/session";
 import { Landing } from "@/features/landing/Landing";
@@ -99,8 +99,8 @@ function CodeInput(props: React.InputHTMLAttributes<HTMLInputElement> & { onCode
 
 function LoginForm({ onDone }: { onDone: () => void }) {
   const embedded = useContext(EmbeddedContext);
-  const [password, setPassword] = useState("");
-  const [code, setCode] = useState("");
+  const [password, setPassword] = useState(DEMO ? "demo" : "");
+  const [code, setCode] = useState(DEMO ? "000000" : "");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -121,7 +121,7 @@ function LoginForm({ onDone }: { onDone: () => void }) {
   };
 
   return (
-    <AuthFrame title="로그인" lead="비밀번호와 인증 앱의 6자리 코드를 함께 입력합니다.">
+    <AuthFrame title="로그인" lead={DEMO ? "데모라 값이 미리 채워져 있습니다. 그대로 로그인을 누르세요." : "비밀번호와 인증 앱의 6자리 코드를 함께 입력합니다."}>
       <form onSubmit={submit} className="space-y-4">
         <Field label="비밀번호">{(p) => <TextInput {...p} type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus={!embedded} required />}</Field>
         <Field label="인증 코드" hint="인증 앱에 보이는 6자리 숫자">
