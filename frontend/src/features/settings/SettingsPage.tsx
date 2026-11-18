@@ -1,15 +1,15 @@
-/** 설정: 거래 환경(시뮬레이션·모의투자·실전), AI 위원회, 리스크 한도, 비용 가정, 데이터, 보안. */
+/** 설정: 거래 환경(시뮬레이션·모의투자·실전)과 증권사 키, AI 위원회, 리스크 한도, 비용 가정, 데이터, 계정, 보안. */
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { toast } from "sonner";
-import { Badge, Button, cx, ErrorState, Field, Notice, PageHeader, Panel, Select, SkeletonRows, TD, TDR, TextInput, TH, THR, type Tone } from "@/components/ui";
+import { Badge, Button, cx, DisclosureIcon, SUMMARY, ErrorState, Field, Notice, PageHeader, Panel, Select, SkeletonRows, TD, TDR, TextInput, TH, THR, type Tone } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import { dayDots, num, pct, won } from "@/lib/format";
 import { CONVICTION, DATA_SOURCE } from "@/lib/labels";
-import { notifyError, refreshAll, useSessions, useSettings, useStatus } from "@/lib/queries";
+import { notifyError, queryClient, refreshAll, useAccount, useBrokerKeys, useSessions, useSettings, useStatus } from "@/lib/queries";
 import { useElevated } from "@/lib/stepup";
 import type { EngineSettings, RiskLimits, SettingsView } from "@/lib/types";
-import { useAuth } from "@/app/AuthGate";
+import { RecoveryCodes, TotpQr, useAuth } from "@/app/AuthGate";
 
 export default function SettingsPage() {
   const settings = useSettings();
@@ -29,6 +29,7 @@ export default function SettingsPage() {
           </div>
         </div>
         <LimitsPanel limits={view.limits} />
+        <AccountPanel />
         <SecurityPanel view={view} />
       </div>
     </div>
@@ -96,7 +97,7 @@ function EnvPanel({ view }: { view: SettingsView }) {
         </div>
       )}
       <p className="mt-3 text-label text-ink-muted">
-        키움 앱키와 시크릿키는 화면에서 입력받지 않습니다. 서버의 .env 파일에만 두고, 키움 개발자 사이트에 이 서버의 고정 IP를 등록해야 합니다. 자세한 순서는 docs/kiwoom-setup.md에 있습니다.
+        키움 앱키와 시크릿키는 여기서 넣거나 서버의 .env 파일에 둡니다. 여기서 넣은 키는 서버 비밀키로 암호화해 DB에 저장하고 .env 값보다 먼저 쓰며, 화면으로 다시 보여 주지 않습니다. 키움 개발자 사이트에 이 서버의 고정 IP를 등록해야 합니다. 자세한 순서는 docs/kiwoom-setup.md에 있습니다.
       </p>
     </Panel>
   );
@@ -122,6 +123,7 @@ function EnvCard({ title, active, tone, lines, children }: { title: string; acti
 function BrokerCard({ title, env, active, tone, configured, baseUrl, keyPrefix, lines }: { title: string; env: "mock" | "live"; active: boolean; tone: Tone; configured: boolean; baseUrl: string; keyPrefix: string; lines: string[] }) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<TestResult | null>(null);
+  const source = useBrokerKeys().data?.[env] ?? null;
 
   const test = async () => {
     setBusy(true);
@@ -139,13 +141,14 @@ function BrokerCard({ title, env, active, tone, configured, baseUrl, keyPrefix, 
     <EnvCard title={title} active={active} tone={tone} lines={lines}>
       <div className="w-full space-y-2">
         <p className="num text-label text-ink-muted">
-          {configured ? <Badge tone="success">키 등록됨</Badge> : <Badge tone="neutral">키 없음</Badge>} <span className="break-all">{baseUrl}</span>
+          {configured ? <Badge tone="success">{source === "db" ? "키 등록됨(화면에서 넣음)" : "키 등록됨(.env)"}</Badge> : <Badge tone="neutral">키 없음</Badge>} <span className="break-all">{baseUrl}</span>
         </p>
         {!configured && (
           <p className="text-label text-ink-muted">
-            서버 .env에 {keyPrefix}_APP_KEY와 {keyPrefix}_SECRET_KEY를 넣고 서버를 다시 시작하세요.
+            아래에서 키를 넣거나, 서버 .env에 {keyPrefix}_APP_KEY와 {keyPrefix}_SECRET_KEY를 넣고 서버를 다시 시작하세요.
           </p>
         )}
+        <BrokerKeyForm env={env} stored={source === "db"} onSaved={() => setResult(null)} />
         <Button size="sm" busy={busy} disabled={!configured} onClick={() => void test()}>
           연결 확인
         </Button>
@@ -165,6 +168,71 @@ function BrokerCard({ title, env, active, tone, configured, baseUrl, keyPrefix, 
         )}
       </div>
     </EnvCard>
+  );
+}
+
+function BrokerKeyForm({ env, stored, onSaved }: { env: "mock" | "live"; stored: boolean; onSaved: () => void }) {
+  const elevated = useElevated();
+  const [appKey, setAppKey] = useState("");
+  const [secretKey, setSecretKey] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const done = (message: string) => {
+    toast.success(message);
+    setAppKey("");
+    setSecretKey("");
+    onSaved();
+    void queryClient.invalidateQueries({ queryKey: ["broker-keys"] });
+    void queryClient.invalidateQueries({ queryKey: ["settings"] });
+  };
+
+  const save = async (event: FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    try {
+      await elevated(() => api.put("/api/settings/broker/keys", { env, app_key: appKey.trim(), secret_key: secretKey.trim() }));
+      done("키를 암호화해 저장했습니다. 연결 확인을 눌러 보세요");
+    } catch (e) {
+      notifyError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async () => {
+    setBusy(true);
+    try {
+      await elevated(() => api.delete(`/api/settings/broker/keys/${env}`));
+      done("화면에서 넣은 키를 지웠습니다. .env에 키가 있으면 그것을 씁니다");
+    } catch (e) {
+      notifyError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <details className="group">
+      <summary className={SUMMARY}>
+        <DisclosureIcon />
+        {stored ? "키 바꾸기" : "키 넣기"}
+      </summary>
+      <form onSubmit={save} className="mt-2 space-y-2">
+        <Field label="앱키">{(p) => <TextInput {...p} type="password" autoComplete="off" spellCheck={false} value={appKey} onChange={(e) => setAppKey(e.target.value)} required />}</Field>
+        <Field label="시크릿키">{(p) => <TextInput {...p} type="password" autoComplete="off" spellCheck={false} value={secretKey} onChange={(e) => setSecretKey(e.target.value)} required />}</Field>
+        <div className="flex flex-wrap gap-2">
+          <Button type="submit" size="sm" variant="primary" busy={busy} disabled={appKey.trim().length < 8 || secretKey.trim().length < 8}>
+            저장
+          </Button>
+          {stored && (
+            <Button size="sm" variant="ghost" disabled={busy} onClick={() => void remove()}>
+              화면에서 넣은 키 지우기
+            </Button>
+          )}
+        </div>
+        <p className="text-label text-ink-muted">저장하거나 지울 때 인증 코드를 다시 묻습니다.</p>
+      </form>
+    </details>
   );
 }
 
@@ -535,6 +603,13 @@ function LimitsPanel({ limits }: { limits: RiskLimits }) {
 const AUDIT: Record<string, string> = {
   login: "로그인",
   login_failed: "로그인 실패",
+  login_recovery: "복구 코드로 로그인",
+  password_changed: "비밀번호 변경",
+  password_change_failed: "비밀번호 변경 실패",
+  recovery_codes_issued: "복구 코드 새로 만듦",
+  totp_reset: "인증 앱 다시 연결",
+  broker_keys_saved: "증권사 키 저장",
+  broker_keys_deleted: "증권사 키 지움",
   setup_completed: "처음 등록 완료",
   stepup: "재인증",
   stepup_failed: "재인증 실패",
@@ -553,6 +628,179 @@ const AUDIT: Record<string, string> = {
   broker_test_ok: "증권사 연결 확인 성공",
   broker_test_failed: "증권사 연결 확인 실패",
 };
+
+// ── 계정 ───────────────────────────────────────────────────────────────
+
+function AccountPanel() {
+  const account = useAccount();
+  return (
+    <Panel title="계정">
+      {account.isPending ? (
+        <SkeletonRows rows={2} />
+      ) : account.isError ? (
+        <ErrorState message={errorMessage(account.error)} onRetry={() => void account.refetch()} />
+      ) : (
+        <>
+          <p className="text-body-sm text-ink-secondary">
+            아이디 <span className="num font-semibold text-ink">{account.data.username}</span> · 남은 복구 코드{" "}
+            <span className={cx("num font-semibold", account.data.recovery_codes_left <= 2 ? "text-danger" : "text-ink")}>{account.data.recovery_codes_left}개</span>
+          </p>
+          {account.data.recovery_codes_left === 0 && (
+            <div className="mt-3">
+              <Notice tone="warning">복구 코드가 없습니다. 인증 앱을 잃어버리면 들어올 수 없으니 새로 만들어 두세요.</Notice>
+            </div>
+          )}
+          <div className="mt-4 grid gap-6 xl:grid-cols-3">
+            <PasswordForm />
+            <RecoveryCodesBlock />
+            <TotpResetBlock />
+          </div>
+        </>
+      )}
+    </Panel>
+  );
+}
+
+function PasswordForm() {
+  const elevated = useElevated();
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [again, setAgain] = useState("");
+  const [busy, setBusy] = useState(false);
+  const mismatch = again.length > 0 && next !== again;
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    try {
+      const { closed } = await elevated(() => api.post<{ closed: number }>("/api/auth/password", { current, new: next }));
+      toast.success(closed ? `비밀번호를 바꿨습니다. 다른 기기 ${closed}대는 로그아웃했습니다` : "비밀번호를 바꿨습니다");
+      setCurrent("");
+      setNext("");
+      setAgain("");
+      void queryClient.invalidateQueries({ queryKey: ["sessions"] });
+    } catch (e) {
+      notifyError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form onSubmit={submit} className="space-y-3">
+      <h3 className="text-body-sm font-semibold text-ink">비밀번호 바꾸기</h3>
+      <Field label="지금 비밀번호">{(p) => <TextInput {...p} type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} required />}</Field>
+      <Field label="새 비밀번호" hint="12자 이상">{(p) => <TextInput {...p} type="password" autoComplete="new-password" minLength={12} value={next} onChange={(e) => setNext(e.target.value)} required />}</Field>
+      <Field label="새 비밀번호 확인" error={mismatch ? "두 비밀번호가 다릅니다" : null}>
+        {(p) => <TextInput {...p} type="password" autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} required />}
+      </Field>
+      <Button type="submit" size="sm" variant="primary" busy={busy} disabled={!current || next.length < 12 || next !== again}>
+        비밀번호 바꾸기
+      </Button>
+      <p className="text-label text-ink-muted">바꾸면 이 기기를 뺀 다른 기기는 모두 로그아웃됩니다.</p>
+    </form>
+  );
+}
+
+function RecoveryCodesBlock() {
+  const elevated = useElevated();
+  const [codes, setCodes] = useState<string[] | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const issue = async () => {
+    setBusy(true);
+    try {
+      setCodes((await elevated(() => api.post<{ recovery_codes: string[] }>("/api/auth/recovery-codes"))).recovery_codes);
+      void queryClient.invalidateQueries({ queryKey: ["account"] });
+    } catch (e) {
+      notifyError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <h3 className="text-body-sm font-semibold text-ink">복구 코드</h3>
+      <p className="text-body-sm text-ink-secondary">인증 앱을 잃어버렸을 때 6자리 코드 대신 넣습니다. 새로 만들면 이전 코드는 모두 못 씁니다.</p>
+      {codes ? (
+        <RecoveryCodes codes={codes} />
+      ) : (
+        <Button size="sm" busy={busy} onClick={() => void issue()}>
+          복구 코드 새로 만들기
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function TotpResetBlock() {
+  const elevated = useElevated();
+  const [secret, setSecret] = useState<{ secret: string; otpauth_uri: string } | null>(null);
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const begin = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      setSecret(await elevated(() => api.post<{ secret: string; otpauth_uri: string }>("/api/auth/totp/reset")));
+      setCode("");
+    } catch (e) {
+      notifyError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirm = async (event: FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await elevated(() => api.post("/api/auth/totp/confirm", { code }));
+      toast.success("새 인증 앱을 연결했습니다. 이전 앱의 코드는 더 이상 받지 않습니다");
+      setSecret(null);
+    } catch (e) {
+      setError(errorMessage(e));
+      setCode("");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <h3 className="text-body-sm font-semibold text-ink">인증 앱 다시 연결</h3>
+      {secret ? (
+        <form onSubmit={confirm} className="space-y-3">
+          <TotpQr secret={secret.secret} uri={secret.otpauth_uri} />
+          <Field label="새 앱의 6자리 코드" error={error}>
+            {(p) => (
+              <TextInput {...p} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" className="num tracking-widest" autoFocus required />
+            )}
+          </Field>
+          <div className="flex gap-2">
+            <Button type="submit" size="sm" variant="primary" busy={busy} disabled={code.length !== 6}>
+              연결 마치기
+            </Button>
+            <Button size="sm" variant="ghost" disabled={busy} onClick={() => setSecret(null)}>
+              취소
+            </Button>
+          </div>
+        </form>
+      ) : (
+        <>
+          <p className="text-body-sm text-ink-secondary">휴대폰을 바꿨거나 잃어버렸을 때 새 인증 앱을 연결합니다. 새 코드를 확인하기 전까지는 이전 앱이 그대로 쓰입니다.</p>
+          <Button size="sm" busy={busy} onClick={() => void begin()}>
+            새 인증 앱 연결하기
+          </Button>
+        </>
+      )}
+    </div>
+  );
+}
 
 function SecurityPanel({ view }: { view: SettingsView }) {
   const sessions = useSessions();

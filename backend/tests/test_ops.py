@@ -55,7 +55,22 @@ def test_a_database_from_before_versioning_is_taken_as_v1_without_touching_data(
     with engine.connect() as conn:
         assert schema_version(conn) == LATEST
         assert conn.execute(text("SELECT count(*) FROM kv")).scalar_one() == 1
-    assert not (tmp_path / "backups").exists()  # 올릴 버전이 없으면 사본도 만들지 않는다
+    assert len(list((tmp_path / "backups").glob("*pre-migrate-v1*"))) == 1  # v1 → 최신으로 올리기 전에 사본을 남긴다
+
+
+def test_v1_users_get_the_admin_login_id_and_empty_recovery_codes(tmp_path):
+    path = tmp_path / "ap.db"
+    with sqlite3.connect(path) as conn:  # v1 모양의 users 표
+        conn.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, password_hash TEXT, totp_secret_enc TEXT, totp_confirmed BOOLEAN,"
+                     " totp_last_counter BIGINT, created_at VARCHAR(32))")
+        conn.execute("INSERT INTO users VALUES (1, 'h', 's', 1, 0, 'x')")
+        conn.execute("PRAGMA user_version = 1")
+    engine = make_engine(path)
+    with engine.connect() as conn:
+        assert schema_version(conn) == LATEST
+        row = conn.execute(text("SELECT username, recovery_codes, totp_pending_enc, password_hash FROM users")).one()
+        assert tuple(row) == ("admin", "[]", None, "h")
+        assert "broker_keys" in inspect(conn).get_table_names()
 
 
 def _v1_metadata() -> MetaData:
