@@ -47,6 +47,16 @@ export function AuthGate({ children }: { children: ReactNode }) {
     );
   }
   if (auth.data.authenticated) return <AuthContext.Provider value={{ logout }}>{children}</AuthContext.Provider>;
+  // 공개 데모(GitHub Pages)에는 비밀번호·인증 코드 입력칸을 두지 않는다. 공개 페이지의 로그인 양식은 피싱 오판의 가장 큰 원인이다.
+  if (DEMO) {
+    return (
+      <EmbeddedContext.Provider value={true}>
+        <Landing action="demo">
+          <DemoEnter onDone={() => void auth.refetch()} />
+        </Landing>
+      </EmbeddedContext.Provider>
+    );
+  }
   const setup = auth.data.setup !== "done";
   return (
     <EmbeddedContext.Provider value={true}>
@@ -98,11 +108,32 @@ function CodeInput(props: React.InputHTMLAttributes<HTMLInputElement> & { onCode
   );
 }
 
+function DemoEnter({ onDone }: { onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const enter = async () => {
+    setBusy(true);
+    try {
+      const result = await api.post<{ csrf: string }>("/api/auth/login");
+      setCsrf(result.csrf);
+      onDone();
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <AuthFrame title="데모 보기" lead="예시 데이터로 대시보드·종목·백테스트 화면을 둘러봅니다. 아무것도 입력하지 않습니다.">
+      <Button type="button" variant="primary" busy={busy} onClick={() => void enter()} className="w-full">
+        데모 둘러보기
+      </Button>
+    </AuthFrame>
+  );
+}
+
 function LoginForm({ onDone }: { onDone: () => void }) {
   const embedded = useContext(EmbeddedContext);
-  const [username, setUsername] = useState(DEMO ? "demo" : "");
-  const [password, setPassword] = useState(DEMO ? "demo" : "");
-  const [code, setCode] = useState(DEMO ? "000000" : "");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
   const [recovery, setRecovery] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -127,7 +158,7 @@ function LoginForm({ onDone }: { onDone: () => void }) {
   };
 
   return (
-    <AuthFrame title="로그인" lead={DEMO ? "데모라 값이 미리 채워져 있습니다. 그대로 로그인을 누르세요." : "아이디, 비밀번호, 인증 앱의 6자리 코드를 함께 입력합니다."}>
+    <AuthFrame title="로그인" lead="아이디, 비밀번호, 인증 앱의 6자리 코드를 함께 입력합니다.">
       <form onSubmit={submit} className="space-y-4">
         <Field label="아이디">
           {(p) => <TextInput {...p} autoComplete="username" autoCapitalize="none" spellCheck={false} value={username} onChange={(e) => setUsername(e.target.value)} autoFocus={!embedded} required />}

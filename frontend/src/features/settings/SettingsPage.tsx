@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { Badge, Button, cx, DisclosureIcon, SUMMARY, ErrorState, Field, Notice, PageHeader, Panel, Select, SkeletonRows, TD, TDR, TextInput, TH, THR, type Tone } from "@/components/ui";
-import { api, errorMessage } from "@/lib/api";
+import { api, DEMO, errorMessage } from "@/lib/api";
 import { dayDots, num, pct, won } from "@/lib/format";
 import { CONVICTION, DATA_SOURCE } from "@/lib/labels";
 import { notifyError, queryClient, refreshAll, useAccount, useBrokerKeys, useSessions, useSettings, useStatus } from "@/lib/queries";
@@ -29,7 +29,8 @@ export default function SettingsPage() {
           </div>
         </div>
         <LimitsPanel limits={view.limits} />
-        <AccountPanel />
+        {/* 공개 데모에는 비밀번호·키 입력칸을 두지 않는다(CLAUDE.md 배포 안전 기준) */}
+        {!DEMO && <AccountPanel />}
         <SecurityPanel view={view} />
       </div>
     </div>
@@ -148,7 +149,7 @@ function BrokerCard({ title, env, active, tone, configured, baseUrl, keyPrefix, 
             아래에서 키를 넣거나, 서버 .env에 {keyPrefix}_APP_KEY와 {keyPrefix}_SECRET_KEY를 넣고 서버를 다시 시작하세요.
           </p>
         )}
-        <BrokerKeyForm env={env} stored={source === "db"} onSaved={() => setResult(null)} />
+        {!DEMO && <BrokerKeyForm env={env} stored={source === "db"} onSaved={() => setResult(null)} />}
         <Button size="sm" busy={busy} disabled={!configured} onClick={() => void test()}>
           연결 확인
         </Button>

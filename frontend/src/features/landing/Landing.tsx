@@ -11,10 +11,11 @@ import { LedgerTable } from "@/features/dashboard/Passbook";
 import { chapterOpacity, CHAPTERS, field, FUNNEL, GATE_LABELS, PHASES, phaseAt, PLANS, smoothstep, standing } from "./funnel";
 import type { Anchor, FunnelHandle } from "./FunnelScene";
 import { FunnelStill } from "./FunnelStill";
+import { DEMO } from "@/lib/api";
 import { LEDGER_SAMPLE } from "./ledgerSample";
 
-type Action = "login" | "setup";
-const ACTION_LABEL: Record<Action, string> = { login: "로그인", setup: "처음 등록" };
+type Action = "login" | "setup" | "demo";
+const ACTION_LABEL: Record<Action, string> = { login: "로그인", setup: "처음 등록", demo: "데모 보기" };
 const HEADER_HEIGHT = 64;
 
 export function Landing({ action, children }: { action: Action; children: ReactNode }) {
@@ -39,7 +40,7 @@ export function Landing({ action, children }: { action: Action; children: ReactN
     const panel = document.getElementById("enter");
     if (!panel) return;
     panel.scrollIntoView({ block: "start" });
-    panel.querySelector<HTMLInputElement>("input")?.focus({ preventScroll: true });
+    panel.querySelector<HTMLElement>("input, button")?.focus({ preventScroll: true });
   };
 
   return (
@@ -544,12 +545,19 @@ function Enter({ children }: { children: ReactNode }) {
       <div className={cx(SECTION, "grid items-start gap-x-6 gap-y-10 lg:grid-cols-12")}>
         <div className="lg:col-span-6">
           <h2 id="enter-title" className="text-h1 font-bold text-ink">
-            한 사람이 쓰는 서버입니다
+            {DEMO ? "저장해 둔 예시로 둘러봅니다" : "한 사람이 쓰는 서버입니다"}
           </h2>
-          <ul className="mt-6 max-w-reading space-y-3 text-body text-ink-secondary">
-            <li>비밀번호와 인증 앱의 6자리 코드가 둘 다 있어야 들어옵니다.</li>
-            <li>지금은 지난 일봉으로 가상 계좌를 굴리는 시뮬레이션만 주문합니다. 키움 모의투자·실전 주문 실행은 아직 없습니다.</li>
-          </ul>
+          {DEMO ? (
+            <ul className="mt-6 max-w-reading space-y-3 text-body text-ink-secondary">
+              <li>이 페이지는 개인 프로젝트의 공개 데모입니다. 서버·증권 계좌와 연결되지 않고, 미리 저장한 예시 데이터만 보여 줍니다.</li>
+              <li>아무 정보도 입력받지 않습니다. 실제로 쓰려면 내 PC에 설치해 실행합니다.</li>
+            </ul>
+          ) : (
+            <ul className="mt-6 max-w-reading space-y-3 text-body text-ink-secondary">
+              <li>비밀번호와 인증 앱의 6자리 코드가 둘 다 있어야 들어옵니다.</li>
+              <li>지금은 지난 일봉으로 가상 계좌를 굴리는 시뮬레이션만 주문합니다. 키움 모의투자·실전 주문 실행은 아직 없습니다.</li>
+            </ul>
+          )}
         </div>
         <div id="enter" className="scroll-mt-24 rounded-lg border border-divider bg-surface p-6 text-body-sm lg:col-span-5 lg:col-start-8">
           {children}
