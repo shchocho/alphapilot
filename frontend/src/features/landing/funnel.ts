@@ -1,9 +1,46 @@
 /** 메인 화면의 "걸러지는 과정" 계산(순수 함수). 3D 장면과 정지 그림이 같은 값을 쓴다. */
 
-/** 단계별로 남는 수. 2026-10-02 시뮬레이션 장부의 "신호 38종목 → 심의 6 → 매수안 3"과 유니버스 143종목. */
+/** 장면이 보여 주는 하루. */
+export interface FunnelData {
+  /** 거래일(YYYY-MM-DD) */
+  day: string;
+  /** 단계별로 남는 수: 살펴본 종목, 기법 조건 통과, 위원회 심의, 주문 계획 */
+  counts: readonly number[];
+  /** 끝까지 간 주문 계획. 기둥이 서는 자리(slot) 순서대로 붙는 이름표다. */
+  plans: readonly { name: string; qty: number }[];
+}
+
+/** 표본: 2026-10-02 시뮬레이션 장부의 "신호 38종목 → 심의 6 → 매수안 3"(8734~8737번)과 유니버스 143종목. */
+export const SAMPLE: FunnelData = {
+  day: "2026-10-02",
+  counts: [143, 38, 6, 3],
+  plans: [
+    { name: "하나마이크론", qty: 40 },
+    { name: "HPSP", qty: 28 },
+    { name: "LG전자", qty: 13 },
+  ],
+};
+
+/** 뒤 단계가 앞 단계보다 많을 수 없고, 주문 계획 수는 이름표 수와 같다(fates가 앞에서부터 잘라 쓰므로 넘치면 깨진다). */
+export function normalize(data: FunnelData): FunnelData {
+  const counts = [data.counts[0], data.counts[1], data.counts[2], data.plans.length].map((n) => Math.max(0, Math.floor(Number(n) || 0)));
+  for (let i = 1; i < counts.length; i += 1) counts[i] = Math.min(counts[i], counts[i - 1]);
+  return { day: data.day, counts, plans: data.plans.slice(0, counts[3]) };
+}
+
+// 공개 데모는 매일 다시 빌드한다(.github/workflows/demo.yml). backend/scripts/export_demo.py가 최신 거래일의 수를
+// funnel.latest.json에 적어 두면 빌드할 때 그 값이 들어온다. 파일이 없거나 데모 빌드가 아니면 표본을 쓴다.
+const latest = import.meta.env.MODE === "demo" ? Object.values(import.meta.glob<FunnelData>("./funnel.latest.json", { eager: true, import: "default" }))[0] : undefined;
+const today = normalize(latest ?? SAMPLE);
+const [year, month, date] = today.day.split("-").map(Number);
+
 export const FUNNEL = {
-  counts: [143, 38, 6, 3] as const,
-  source: "2026년 10월 2일 시뮬레이션 기록",
+  ...today,
+  /** 표본(2026-10-02)을 보여 주는 중인가. 장부 표본 설명이 이 값에 따라 달라진다. */
+  sample: !latest,
+  /** 날마다 다른 종목이 통과하도록 날짜를 씨앗으로 쓴다. */
+  seed: year * 10000 + month * 100 + date,
+  source: `${year}년 ${month}월 ${date}일 시뮬레이션 기록`,
 };
 
 export interface Chapter {
@@ -18,12 +55,26 @@ export interface Chapter {
   body: string;
 }
 
-export const CHAPTERS: Chapter[] = [
-  { from: 0, to: 0.16, count: 143, label: "살펴본 종목", unit: "종목", title: "매일 장이 끝나면 살펴봅니다", body: "거래대금이 충분한 코스피·코스닥 종목의 일봉을 받아 옵니다." },
-  { from: 0.3, to: 0.46, count: 38, label: "기법 조건 통과", unit: "종목", title: "기법 조건을 통과했습니다", body: "추세, 돌파, 수급, 변동성 돌파. 조건을 하나라도 못 채우면 여기서 멈춥니다." },
-  { from: 0.58, to: 0.74, count: 6, label: "위원회 심의", unit: "종목", title: "위원회가 심의했습니다", body: "점수 순으로 올라온 후보를 강세·약세로 따져 매수, 보류를 정합니다." },
-  { from: 0.86, to: 1, count: 3, label: "주문 계획", unit: "건", title: "주문 계획이 됐습니다", body: "리스크 점검이 수량을 줄이거나 막고, 남은 것만 내 승인을 기다립니다." },
-];
+/** 장마다 보이는 글. 남은 것이 없는 날은 그 단계의 글이 "없다"로 바뀐다. */
+export function chapters(counts: readonly number[] = FUNNEL.counts): Chapter[] {
+  const [scanned, signalled, reviewed, planned] = counts;
+  return [
+    { from: 0, to: 0.16, count: scanned, label: "살펴본 종목", unit: "종목", title: "매일 장이 끝나면 살펴봅니다", body: "거래대금이 충분한 코스피·코스닥 종목의 일봉을 받아 옵니다." },
+    { from: 0.3, to: 0.46, count: signalled, label: "기법 조건 통과", unit: "종목", title: signalled ? "기법 조건을 통과했습니다" : "기법 조건을 통과한 종목이 없습니다", body: "추세, 돌파, 수급, 변동성 돌파. 조건을 하나라도 못 채우면 여기서 멈춥니다." },
+    {
+      from: 0.58, to: 0.74, count: reviewed, label: "위원회 심의", unit: "종목",
+      title: reviewed ? "위원회가 심의했습니다" : "위원회에 올라간 종목이 없습니다",
+      body: reviewed ? "점수 순으로 올라온 후보를 강세·약세로 따져 매수, 보류를 정합니다." : "순위에 든 종목이 심의 전 점검에서 모두 막혔습니다. 살 수 없는 종목은 심의에 올리지 않습니다.",
+    },
+    {
+      from: 0.86, to: 1, count: planned, label: "주문 계획", unit: "건",
+      title: planned ? "주문 계획이 됐습니다" : "이날은 주문 계획이 없습니다",
+      body: planned ? "리스크 점검이 수량을 줄이거나 막고, 남은 것만 내 승인을 기다립니다." : "걸러지고 남은 것이 없으면 사지 않습니다. 다음 거래일에 다시 살펴봅니다.",
+    },
+  ];
+}
+
+export const CHAPTERS: Chapter[] = chapters();
 
 /** 0 → 1로 부드럽게 넘어가는 보간. */
 export function smoothstep(edge0: number, edge1: number, x: number): number {
@@ -55,7 +106,7 @@ export function seeded(seed: number): () => number {
  * 종목마다 "어느 관문까지 가는가"를 정한다.
  * 0: 첫 관문(기법 조건)에서 멈춤, 1: 둘째(위원회)에서, 2: 셋째(리스크 점검)에서, 3: 끝까지 통과.
  */
-export function fates(counts: readonly number[] = FUNNEL.counts, seed = 20261002): number[] {
+export function fates(counts: readonly number[] = FUNNEL.counts, seed = FUNNEL.seed): number[] {
   const total = counts[0];
   const order = Array.from({ length: total }, (_, i) => i);
   const random = seeded(seed);
@@ -181,22 +232,29 @@ export interface Bar {
   height: number;
   /** 0~2: 그 번호의 관문에서 멈춤, 3: 끝까지 통과 */
   stage: number;
-  /** 끝까지 간 종목이 마지막에 설 자리(0~2). 나머지는 -1 */
+  /** 끝까지 간 종목이 마지막에 설 자리(0부터). 나머지는 -1 */
   slot: number;
+  /** 끝까지 간 종목이 마지막에 서는 x. 나머지는 0 */
+  endX: number;
 }
 
-/** 143종목의 처음 자리와 높이(씨앗 고정). */
-export function field(): Bar[] {
-  const stage = fates();
+/** 종목의 처음 자리와 높이(씨앗 고정). */
+export function field(counts: readonly number[] = FUNNEL.counts, seed = FUNNEL.seed): Bar[] {
+  const stage = fates(counts, seed);
   const random = seeded(143);
+  // 주문 계획은 한 줄로 선다. 많은 날은 관문 너비 안에 들어오게 간격을 좁힌다.
+  const planned = counts[3];
+  const spacing = Math.min(1.9, (FIELD.gateWidth - 3) / Math.max(1, planned - 1));
   let slot = 0;
   return stage.map((s, i) => {
     const col = i % FIELD.cols;
+    // shortcut: 줄 수(FIELD.rows)는 143종목(13 x 11)에 맞춘 값이다. 유니버스가 크게 늘면 뒷줄이 카메라 쪽으로 밀리니 종목 수로 계산한다.
     const row = Math.floor(i / FIELD.cols);
     const x = (col - (FIELD.cols - 1) / 2) * FIELD.gapX + (random() - 0.5) * 0.12;
     const height = 0.8 + random() * 2.1;
     const z = (row - (FIELD.rows - 1) / 2) * FIELD.gapZ;
-    return { x, z, height, stage: s, slot: s === 3 ? slot++ : -1 };
+    const mine = s === 3 ? slot++ : -1;
+    return { x, z, height, stage: s, slot: mine, endX: mine < 0 ? 0 : (mine - (planned - 1) / 2) * spacing };
   });
 }
 
@@ -227,9 +285,9 @@ export function barAt(bar: Bar, p: number, out: BarState = { x: 0, z: 0, height:
       out.tint = -flat;
     }
   } else {
-    // 끝까지 간 3건은 한 줄로 모여 계획 색이 된다
+    // 끝까지 간 종목은 한 줄로 모여 계획 색이 된다
     const arrive = smoothstep(0.86, 0.98, p);
-    out.x = lerp(bar.x, (bar.slot - 1) * 1.9, arrive);
+    out.x = lerp(bar.x, bar.endX, arrive);
     out.z = Math.max(lerp(out.z, FIELD.endZ, arrive), FIELD.endZ);
     out.height = lerp(bar.height, 3.1, arrive);
     out.tint = arrive;
@@ -273,12 +331,8 @@ export function standing(bars: readonly Bar[], progress: number): number {
   return count;
 }
 
-/** 끝까지 간 주문 계획 3건(장부 8734~8736번). 기둥이 서는 자리(slot) 순서대로 붙는 이름표다. */
-export const PLANS: readonly { name: string; qty: number }[] = [
-  { name: "하나마이크론", qty: 40 },
-  { name: "HPSP", qty: 28 },
-  { name: "LG전자", qty: 13 },
-];
+/** 끝까지 간 주문 계획. 기둥이 서는 자리(slot) 순서대로 붙는 이름표다. */
+export const PLANS = FUNNEL.plans;
 
 /**
  * 등장: 화면을 처음 열 때 한 번, 기둥이 바닥에서 올라온다(ms).

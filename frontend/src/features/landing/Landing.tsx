@@ -115,7 +115,7 @@ function useBox(ref: RefObject<HTMLElement | null>): { width: number; height: nu
 
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
 
-/** 첫 화면: 143종목이 관문 셋을 지나 주문 계획 3건이 되는 과정. 스크롤이 장면을 앞으로 보낸다. */
+/** 첫 화면: 살펴본 종목이 관문 셋을 지나 주문 계획으로 걸러지는 과정(표본은 143종목 → 3건). 스크롤이 장면을 앞으로 보낸다. */
 function Hero({ sectionRef, action, onEnter }: { sectionRef: RefObject<HTMLElement | null>; action: Action; onEnter: () => void }) {
   const reducedMotion = useMedia("(prefers-reduced-motion: reduce)");
   // 화면이 아주 낮으면(가로로 눕힌 휴대폰) 고정한 무대에 글이 다 들어가지 않으므로 고정하지 않는다
@@ -310,7 +310,7 @@ function Hero({ sectionRef, action, onEnter }: { sectionRef: RefObject<HTMLEleme
               {!fixed &&
                 CHAPTERS.slice(1).map((chapter, i) => (
                   <div
-                    key={chapter.count}
+                    key={chapter.label}
                     ref={(el) => {
                       blocks.current[i + 1] = el;
                     }}
@@ -356,7 +356,7 @@ function Hero({ sectionRef, action, onEnter }: { sectionRef: RefObject<HTMLEleme
         <div className="mx-auto max-w-wide px-5 pb-16 md:px-10">
           <ol className="grid gap-x-6 gap-y-8 border-t border-ink pt-6 sm:grid-cols-2 lg:grid-cols-4">
             {CHAPTERS.map((chapter) => (
-              <li key={chapter.count}>
+              <li key={chapter.label}>
                 <p className="num font-mono text-h2 font-medium text-ink">
                   {chapter.count}
                   <span className="ml-1 font-sans text-h5 font-semibold">{chapter.unit}</span>
@@ -387,7 +387,7 @@ function Counter({ phase, countRef }: { phase: number; countRef: RefObject<HTMLS
       </p>
       <ol aria-hidden className="mt-3 grid grid-cols-4 gap-1">
         {CHAPTERS.map((c, i) => (
-          <li key={c.count} className={cx("h-0.5 transition-colors duration-(--duration-base)", i < now.step ? "bg-ink" : "bg-divider")} />
+          <li key={c.label} className={cx("h-0.5 transition-colors duration-(--duration-base)", i < now.step ? "bg-ink" : "bg-divider")} />
         ))}
       </ol>
       <p className="mt-2 text-caption text-ink-muted">{FUNNEL.source}</p>
@@ -404,10 +404,11 @@ function Ledger() {
       <div className={cx(SECTION, "grid items-start gap-x-6 gap-y-10 lg:grid-cols-12")}>
         <div className="lg:col-span-4">
           <h2 id="ledger-title" className="text-h1 font-bold text-ink">
-            방금 본 장면은 장부의 한 줄입니다
+            {FUNNEL.sample ? "방금 본 장면은 장부의 한 줄입니다" : "걸러진 하루는 장부에 이렇게 남습니다"}
           </h2>
           <p className="mt-5 max-w-reading text-body text-ink-secondary">
-            8737번 줄이 그날의 심의입니다. 신호 38종목, 심의 6종목, 매수안 3건. 그 아래로 주문 계획 세 건이, 위로 내가 두 건을 승인하고 한 건을 거절한 것과 다음 거래일의 체결이 이어집니다.
+            {/* 장면이 최신 거래일을 보여 주는 날에는 아래 표본이 다른 날(10월 2일)의 것임을 밝힌다 */}
+            {FUNNEL.sample ? "8737번 줄이 그날의 심의입니다." : "주문 계획이 나온 2026년 10월 2일의 예입니다. 8737번 줄이 그날의 심의입니다."} 신호 38종목, 심의 6종목, 매수안 3건. 그 아래로 주문 계획 세 건이, 위로 내가 두 건을 승인하고 한 건을 거절한 것과 다음 거래일의 체결이 이어집니다.
           </p>
           <p className="mt-4 text-caption text-ink-muted">2026년 10월 2일~6일 시뮬레이션 장부 8734~8742번</p>
         </div>

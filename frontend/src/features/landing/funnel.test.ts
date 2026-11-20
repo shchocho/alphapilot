@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { LEDGER_SAMPLE } from "./ledgerSample";
-import { barAt, CAMERA, CHAPTERS, chapterOpacity, fates, FIELD, field, FUNNEL, INTRO, introScale, PHASES, phaseAt, PLANS, projector, seeded, smoothstep, standing, travelAt } from "./funnel";
+import { barAt, CAMERA, CHAPTERS, chapterOpacity, chapters, fates, FIELD, field, FUNNEL, INTRO, introScale, normalize, PHASES, phaseAt, PLANS, projector, seeded, smoothstep, standing, travelAt } from "./funnel";
 
 describe("걸러지는 수", () => {
   it("관문마다 남는 수가 기록과 같다", () => {
@@ -167,6 +167,29 @@ describe("등장(처음 한 번, 기둥이 바닥에서 올라온다)", () => {
     const back = bars.reduce((a, b) => (b.z < a.z ? b : a));
     expect(introScale(front, 300)).toBeGreaterThan(introScale(back, 300));
     expect(new Set(bars.map((b) => introScale(b, 400).toFixed(2))).size).toBeGreaterThan(8);
+  });
+});
+
+describe("매일 바뀌는 수(공개 데모는 최신 거래일을 보여 준다)", () => {
+  it("주문 계획이 없는 날: 끝까지 가는 종목이 없고 숫자판이 장마다 그날의 수와 같다", () => {
+    const counts = [143, 22, 0, 0];
+    const bars = field(counts, 20261117);
+    expect(bars.filter((b) => b.slot >= 0)).toHaveLength(0);
+    const story = chapters(counts);
+    story.forEach((chapter) => expect(standing(bars, (chapter.from + chapter.to) / 2)).toBe(chapter.count));
+    expect(story[2].title).toBe("위원회에 올라간 종목이 없습니다");
+    expect(story[3].title).toBe("이날은 주문 계획이 없습니다");
+    expect(new Set(story.map((chapter) => chapter.label)).size).toBe(4); // 화면의 목록 key로 쓴다(수는 0이 겹칠 수 있다)
+  });
+  it("주문 계획이 많은 날에도 관문 너비 안에 한 줄로 선다", () => {
+    const xs = field([143, 40, 8, 8], 1).filter((b) => b.stage === 3).map((b) => barAt(b, 1).x);
+    expect(new Set(xs).size).toBe(8);
+    expect(Math.max(...xs.map(Math.abs))).toBeLessThan(FIELD.gateWidth / 2);
+  });
+  it("받은 수를 다듬는다: 뒤 단계가 앞 단계를 넘지 않고, 주문 계획 수는 이름표 수와 같다", () => {
+    const plan = { name: "가", qty: 1 };
+    expect(normalize({ day: "2026-11-17", counts: [143, 22, 30, 9], plans: [plan] }).counts).toEqual([143, 22, 22, 1]);
+    expect(normalize({ day: "2026-11-17", counts: [143, 22, 0, 0], plans: [plan] })).toEqual({ day: "2026-11-17", counts: [143, 22, 0, 0], plans: [] });
   });
 });
 
