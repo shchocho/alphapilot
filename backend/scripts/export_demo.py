@@ -15,6 +15,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT.parent / "frontend" / "public" / "demo"
+# 첫 화면 3D 장면이 쓰는 최신 거래일의 수. 데모를 빌드할 때 frontend/src/features/landing/funnel.ts가 읽는다.
+FUNNEL = ROOT.parent / "frontend" / "src" / "features" / "landing" / "funnel.latest.json"
 sys.path.insert(0, str(ROOT))
 
 os.environ["AP_ENV"] = "dev"
@@ -118,6 +120,14 @@ def main() -> None:
         (OUT / f"{key(url)}.json").write_text(json.dumps(body, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     size = sum(p.stat().st_size for p in OUT.glob("*.json"))
     print(f"{len(saved)}개 응답, {size / 1e6:.1f}MB -> {OUT}")
+
+    # 장후 심의는 그날의 마지막 줄이라 첫 cycle 줄이 최신 거래일이다. 그날 매수 계획은 자동 승인 없이 돌려서 승인 대기로 남아 있다.
+    cycle = next(r for r in saved[f"/api/ledger?limit=100&kind={LEDGER_KINDS[3]}"]["rows"] if r["kind"] == "cycle")
+    plans = [{"name": c["name"], "qty": c["qty"]} for c in saved["/api/intents/pending"]["cards"]
+             if c["side"] == "buy" and str(c["created_on"])[:10] == cycle["day"]]
+    counts = [cycle["payload"]["scanned"], cycle["payload"]["signalled"], cycle["payload"]["candidates"], len(plans)]
+    FUNNEL.write_text(json.dumps({"day": cycle["day"], "counts": counts, "plans": plans}, ensure_ascii=False), encoding="utf-8")
+    print(f"첫 화면: {cycle['day']} {' → '.join(map(str, counts))} -> {FUNNEL}")
 
 
 if __name__ == "__main__":

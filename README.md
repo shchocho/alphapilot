@@ -94,6 +94,8 @@ cd frontend && npm run build:demo
 
 그다음 `frontend/dist-demo`를 `gh-pages` 브랜치에 올린다.
 
+평일 18:10(KST)에는 `.github/workflows/demo.yml`이 이 세 단계를 자동으로 돌린다. 그래서 첫 화면 3D 장면의 수(살펴본 종목 → 기법 조건 통과 → 위원회 심의 → 주문 계획)는 최신 거래일 것으로 바뀐다. 내보내기가 `frontend/src/features/landing/funnel.latest.json`에 그날의 수를 적고 데모 빌드가 그 파일을 읽는다. 파일이 없거나 데모 빌드가 아니면 2026-10-02 표본이 보인다. 자동 실행은 `gh-pages`를 빌드 결과 커밋 하나로 덮어쓴다.
+
 ## 서버에 올리기
 
 [docs/deploy.md](docs/deploy.md)를 따른다. 요약하면 서울 리전 리눅스 서버 한 대에 Docker로 올리고 Caddy가 HTTPS를 맡는다. 키움 연동은 [docs/kiwoom-setup.md](docs/kiwoom-setup.md).

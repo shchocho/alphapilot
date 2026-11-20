@@ -1,0 +1,51 @@
+# 공개 데모(GitHub Pages)를 평일마다 최신 거래일 데이터로 다시 만든다. 첫 화면 3D 장면의 수도 이때 바뀐다.
+# 어느 단계든 실패하면 올리지 않으므로 사이트에는 전날 것이 그대로 남는다.
+name: 데모 사이트 갱신
+
+on:
+  schedule:
+    - cron: "10 9 * * 1-5" # 평일 18:10 KST. 장 마감(15:30) 뒤 일봉이 확정된 다음
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: demo
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 시뮬레이션을 돌려 데모 데이터 만들기
+        working-directory: backend
+        env:
+          TZ: Asia/Seoul
+        run: uv run python scripts/export_demo.py
+
+      - name: 화면 빌드
+        working-directory: frontend
+        run: npm ci && npm run build:demo
+
+      # 빌드 결과만 담은 커밋 하나로 덮어쓴다(매일 쌓으면 저장소가 날마다 몇 MB씩 커진다)
+      - name: gh-pages 브랜치에 올리기
+        working-directory: frontend/dist-demo
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          touch .nojekyll
+          git init -q -b gh-pages
+          git add -A
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "데모 사이트 빌드 (main ${GITHUB_SHA::7}, $(TZ=Asia/Seoul date +%F))"
+          git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
