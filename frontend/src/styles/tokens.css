@@ -1,22 +1,72 @@
 /* AlphaPilot tokens.css — Universal Design DNA 토큰(이름과 역할 고정)에 프로젝트가 정한 값만 바꿨다.
-   바꾼 것: accent 계열(보라), 가격 방향 색 추가. 근거는 DESIGN.md. 다크는 [data-theme="dark"] 한 곳. */
-:root, [data-theme="light"] {
-  --canvas: #f5f4f0;
+   바꾼 것: 기본 테마(다크 남색 슬레이트), accent 계열(보라), 가격 방향 색 추가. 근거는 DESIGN.md. */
+/* 2026-11-21 개편(ui-ux-pro-max "다크 트레이딩 콘솔"): 기본은 어두운 남색 슬레이트, 밝은 화면은 같은 슬레이트 계열의 선택지.
+   accent(보라)·가격 방향(상승 빨강·하락 파랑)·상태색의 역할은 그대로. 대비 계산은 DESIGN.md. */
+/* 기본 테마. data-theme이 없을 때(스크립트가 돌기 전)도 어두운 화면이다. */
+:root, [data-theme="dark"] {
+  --canvas: #020617;
+  --surface: #0e1223;
+  --surface-raised: #161c30;
+  --surface-sunken: #060a18;
+  --surface-inverse: #f8fafc;
+  --ink: #f8fafc;
+  --ink-secondary: #cbd5e1;
+  --ink-muted: #94a3b8;
+  --ink-inverse: #0f172a;
+  --border: #64748b;
+  --divider: #1e293b;
+  --primary: #f8fafc;
+  --primary-hover: #e2e8f0;
+  --on-primary: #0f172a;
+  --secondary: #1e293b;
+  --secondary-hover: #273449;
+  --accent: #b3a6ff;
+  --accent-hover: #cbc2ff;
+  --on-accent: #020617;
+  --accent-subtle: #1e1b4b;
+  --focus: var(--accent);
+  --success: #5bcbd0;
+  --success-subtle: #0a2a2d;
+  --warning: #f0b450;
+  --warning-subtle: #2a1f0d;
+  --danger: #ff8f80;
+  --danger-hover: #ffaa9e;
+  --on-danger: #020617;
+  --danger-subtle: #2e1418;
+  --info: var(--accent);
+  --info-subtle: var(--accent-subtle);
+  --scrim: rgba(2, 6, 23, 0.72);
+  --data-1: var(--accent);
+  --data-2: #7c8aa3;
+  --data-3: #334155;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(148, 163, 184, 0.06);
+  --shadow-2: 0 12px 32px -12px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(148, 163, 184, 0.08);
+  --shadow-3: 0 32px 80px -24px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(148, 163, 184, 0.1);
+  --up: #ff8a8a;
+  --up-solid: #e5484d;
+  --up-subtle: #341419;
+  --down: #8bb6ff;
+  --down-solid: #3b7bf0;
+  --down-subtle: #102349;
+}
+/* 밝은 화면(선택). :root와 특이도가 같아서 이 블록이 뒤에 와야 이긴다. */
+[data-theme="light"] {
+  --canvas: #f1f5f9;
   --surface: #ffffff;
   --surface-raised: #ffffff;
-  --surface-sunken: #ebeae5;
-  --surface-inverse: #121211;
-  --ink: #121211;
-  --ink-secondary: #47463f;
-  --ink-muted: #696862;
-  --ink-inverse: #f5f4f0;
-  --border: #8f8d86;
-  --divider: #e2e0da;
-  --primary: #121211;
-  --primary-hover: #34332f;
+  --surface-sunken: #e2e8f0;
+  --surface-inverse: #0f172a;
+  --ink: #0f172a;
+  --ink-secondary: #334155;
+  --ink-muted: #475569;
+  --ink-inverse: #f8fafc;
+  --border: #64748b;
+  --divider: #e2e8f0;
+  --primary: #0f172a;
+  --primary-hover: #1e293b;
   --on-primary: #ffffff;
-  --secondary: #e9e7e1;
-  --secondary-hover: #dddbd4;
+  --secondary: #e2e8f0;
+  --secondary-hover: #cbd5e1;
   --accent: #4b3bb0;
   --accent-hover: #3a2d8f;
   --on-accent: #ffffff;
@@ -32,13 +82,13 @@
   --danger-subtle: #fbe7e4;
   --info: var(--accent);
   --info-subtle: var(--accent-subtle);
-  --scrim: rgba(18, 18, 17, 0.48);
+  --scrim: rgba(15, 23, 42, 0.48);
   --data-1: var(--accent);
-  --data-2: #8f8d86;
-  --data-3: #c9c7c0;
-  --shadow-1: 0 1px 2px rgba(18, 18, 17, 0.06), 0 0 0 1px rgba(18, 18, 17, 0.04);
-  --shadow-2: 0 12px 32px -12px rgba(18, 18, 17, 0.2), 0 2px 6px rgba(18, 18, 17, 0.06);
-  --shadow-3: 0 32px 80px -24px rgba(18, 18, 17, 0.32), 0 4px 12px rgba(18, 18, 17, 0.08);
+  --data-2: #7c8aa3;
+  --data-3: #cbd5e1;
+  --shadow-1: 0 1px 2px rgba(15, 23, 42, 0.06), 0 0 0 1px rgba(15, 23, 42, 0.04);
+  --shadow-2: 0 12px 32px -12px rgba(15, 23, 42, 0.2), 0 2px 6px rgba(15, 23, 42, 0.06);
+  --shadow-3: 0 32px 80px -24px rgba(15, 23, 42, 0.32), 0 4px 12px rgba(15, 23, 42, 0.08);
   /* AlphaPilot 추가 토큰 — 가격 방향(국내 관례: 상승 빨강, 하락 파랑). 항상 ▲▼ 부호와 함께 쓴다. */
   --up: #c2272b;
   --up-solid: #d9363a;
@@ -46,52 +96,6 @@
   --down: #1d58d0;
   --down-solid: #2f6fed;
   --down-subtle: #eaf1fe;
-}
-[data-theme="dark"] {
-  --canvas: #0e0e0d;
-  --surface: #161615;
-  --surface-raised: #201f1e;
-  --surface-sunken: #080808;
-  --surface-inverse: #f5f4f0;
-  --ink: #edece8;
-  --ink-secondary: #bebcb5;
-  --ink-muted: #96948d;
-  --ink-inverse: #121211;
-  --border: #6f6d67;
-  --divider: #2b2a28;
-  --primary: #edece8;
-  --primary-hover: #d6d4ce;
-  --on-primary: #121211;
-  --secondary: #272624;
-  --secondary-hover: #302f2c;
-  --accent: #b3a6ff;
-  --accent-hover: #cbc2ff;
-  --on-accent: #0e0e0d;
-  --accent-subtle: #221d47;
-  --focus: var(--accent);
-  --success: #55c4c9;
-  --success-subtle: #0f2627;
-  --warning: #f0b450;
-  --warning-subtle: #2c2110;
-  --danger: #ff8f80;
-  --danger-hover: #ffaa9e;
-  --on-danger: #121211;
-  --danger-subtle: #331714;
-  --info: var(--accent);
-  --info-subtle: var(--accent-subtle);
-  --scrim: rgba(0, 0, 0, 0.64);
-  --data-1: var(--accent);
-  --data-2: #7d7b75;
-  --data-3: #4a4945;
-  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.04);
-  --shadow-2: 0 12px 32px -12px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.06);
-  --shadow-3: 0 32px 80px -24px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.08);
-  --up: #ff8a8a;
-  --up-solid: #e5484d;
-  --up-subtle: #3a1618;
-  --down: #8bb6ff;
-  --down-solid: #3b7bf0;
-  --down-subtle: #13264a;
 }
 :root {
   --space-1: 4px;
