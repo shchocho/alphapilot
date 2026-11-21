@@ -1,15 +1,28 @@
-/** 자동매매: 승인 대기 → 얼마나 맡길지(자동화 단계) → 누가 판단할지 → 어떤 기법을 쓸지 → 시뮬레이션 진행. */
+/**
+ * 자동매매. 탭 둘:
+ *  - 자동 발굴: 승인 대기 → 얼마나 맡길지(자동화 단계) → 누가 판단할지 → 어떤 기법을 쓸지 → 시뮬레이션 진행
+ *  - 내 종목 운용: 총액을 바구니로 나눠 내가 고른 종목을 위원회가 바구니별로 심의(sleeves/)
+ */
 
 import { FastForward, RotateCcw, StepForward } from "lucide-react";
-import { useEffect, useState, type FormEvent } from "react";
+import { lazy, Suspense, useEffect, useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { Button, Check, cx, Empty, ErrorState, Field, Modal, Notice, PageHeader, Panel, RadioRow, SkeletonRows, TD, TDR, TextInput, TH, THR } from "@/components/ui";
+import { Button, Check, cx, Empty, ErrorState, Field, Modal, Notice, PageHeader, Panel, RadioRow, SkeletonRows, Tabs, TD, TDR, TextInput, TH, THR } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import { dayDots, dayLabel, num, won, wonShort } from "@/lib/format";
 import { notifyError, refreshAll, usePending, useSettings, useStatus } from "@/lib/queries";
 import { useElevated } from "@/lib/stepup";
 import type { EngineSettings, IntentCard, SettingsView } from "@/lib/types";
 import { ApprovalCard, useStableCards } from "./ApprovalCard";
+
+const SleevesView = lazy(() => import("./sleeves/SleevesView"));
+
+type AutoTab = "find" | "sleeves";
+const TABS: { value: AutoTab; label: string }[] = [
+  { value: "find", label: "자동 발굴" },
+  { value: "sleeves", label: "내 종목 운용" },
+];
 
 const LEVEL_TEXT: Record<number, string> = {
   0: "주문 계획을 알려 주기만 하고 주문은 내지 않습니다. 이미 보유한 종목의 손절·익절은 그대로 실행합니다.",
@@ -30,6 +43,35 @@ interface DayResult {
 }
 
 export default function AutoPage() {
+  const [params, setParams] = useSearchParams();
+  const tab: AutoTab = params.get("tab") === "sleeves" ? "sleeves" : "find";
+  return (
+    <div>
+      <PageHeader
+        title="자동매매"
+        lead={
+          tab === "find"
+            ? "엔진에 얼마나 맡길지 정하는 곳입니다. 어떤 단계에서도 리스크 점검과 손절은 꺼지지 않습니다."
+            : "총 투입 금액을 바구니로 나누고, 내가 고른 종목을 바구니마다 위원회가 심의해 모으기와 매수·매도 타이밍을 알려 줍니다."
+        }
+      />
+      <div className="mb-4">
+        <Tabs label="자동매매 보기" value={tab} onChange={(value) => setParams(value === "find" ? {} : { tab: value }, { replace: true })} items={TABS} />
+      </div>
+      <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
+        {tab === "find" ? (
+          <FindTab />
+        ) : (
+          <Suspense fallback={<SkeletonRows rows={8} label="내 종목 운용을 불러오는 중" />}>
+            <SleevesView />
+          </Suspense>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FindTab() {
   const settings = useSettings();
   const pending = usePending();
 
@@ -45,7 +87,6 @@ function AutoView({ view, cards }: { view: SettingsView; cards: IntentCard[] }) 
 
   return (
     <div>
-      <PageHeader title="자동매매" lead="엔진에 얼마나 맡길지 정하는 곳입니다. 어떤 단계에서도 리스크 점검과 손절은 꺼지지 않습니다." />
       <div className="space-y-4">
         <section aria-labelledby="pending-title">
           <h2 id="pending-title" className="mb-2 text-h6 font-bold text-ink">

@@ -452,7 +452,7 @@ function Product() {
               height={1350}
               loading="lazy"
               decoding="async"
-              alt="관제 화면: 오늘 판정, 승인을 기다리는 주문 계획, 보유 종목, 장부가 한 화면에 있다. 시뮬레이션 데이터로 찍었다."
+              alt="관제 화면: 오늘 판정, 손실 한도와 투자 비중 계기, 통장정리(장부), 감시 중인 조건, 시장 국면이 한 화면에 있다. 시뮬레이션 데이터로 찍었다."
               className="block h-auto w-full"
             />
           </picture>

@@ -181,7 +181,8 @@ export async function mountFunnel(canvas: HTMLCanvasElement, options: Options): 
   const palette = { ink: new THREE.Color(), dropped: new THREE.Color(), accent: new THREE.Color() };
   let dirty = true;
   const refreshColors = () => {
-    palette.ink.copy(tokenColor("--ink-secondary"));
+    // 다크(남색 바탕)에서 ink-secondary 기둥은 빛을 받아 거의 흰색으로 떠서, 차트 비교색과 같은 회청색(data-2)을 쓴다(2026-11-21)
+    palette.ink.copy(tokenColor(document.documentElement.dataset.theme === "dark" ? "--data-2" : "--ink-secondary"));
     palette.dropped.copy(tokenColor("--data-3"));
     palette.accent.copy(tokenColor("--accent"));
     fog.color.copy(tokenColor("--canvas"));

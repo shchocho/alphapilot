@@ -216,6 +216,106 @@ class BacktestRow(Base):
     result: Mapped[str] = mapped_column(Text)
 
 
+# ── 내 종목 운용(바구니). docs/sleeves.md ─────────────────────────────────────
+
+
+class PlanRevisionRow(Base):
+    """운용 계획의 판. 저장할 때마다 한 줄이 늘고, 지난 판은 바꾸지 않는다."""
+
+    __tablename__ = "plan_revisions"
+    rev: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[str] = mapped_column(String(32))
+    day: Mapped[str] = mapped_column(String(10))  # 저장할 때의 최신 일봉 날짜(이 판이 적용되기 시작한 거래일)
+    note: Mapped[str] = mapped_column(String(200), default="")
+    restored_from: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    config: Mapped[str] = mapped_column(Text)  # PlanConfig JSON
+
+
+class SleeveBookRow(Base):
+    __tablename__ = "sleeve_books"
+    sleeve_id: Mapped[str] = mapped_column(String(8), primary_key=True)
+    state: Mapped[str] = mapped_column(Text)  # logic.Book JSON
+    snapshot: Mapped[str | None] = mapped_column(Text, nullable=True)  # 마지막 심의 직전 장부(같은 날 다시 돌릴 때 되돌린다)
+    closed: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[str] = mapped_column(String(32))
+
+
+class SleeveRunRow(Base):
+    __tablename__ = "sleeve_runs"
+    id: Mapped[str] = mapped_column(String(16), primary_key=True)
+    as_of: Mapped[str] = mapped_column(String(10), index=True)
+    rev: Mapped[int] = mapped_column(Integer)
+    trigger: Mapped[str] = mapped_column(String(12))  # manual · schedule
+    created_at: Mapped[str] = mapped_column(String(32))
+    summary: Mapped[str] = mapped_column(Text)  # 바구니별 요약 JSON
+    ai_calls: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    replaced: Mapped[bool] = mapped_column(Boolean, default=False)  # 같은 날 다시 돌려 무효가 된 회차
+
+
+class SleeveSignalRow(Base):
+    __tablename__ = "sleeve_signals"
+    id: Mapped[str] = mapped_column(String(24), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(16), index=True)
+    sleeve_id: Mapped[str] = mapped_column(String(8), index=True)
+    rev: Mapped[int] = mapped_column(Integer)
+    as_of: Mapped[str] = mapped_column(String(10), index=True)
+    code: Mapped[str] = mapped_column(String(16))
+    name: Mapped[str] = mapped_column(String(64))
+    action: Mapped[str] = mapped_column(String(10))
+    rules_action: Mapped[str] = mapped_column(String(10))
+    conviction: Mapped[str] = mapped_column(String(12))
+    source: Mapped[str] = mapped_column(String(8))
+    status: Mapped[str] = mapped_column(String(8), default="ok")
+    score: Mapped[float] = mapped_column(Float)
+    close: Mapped[float] = mapped_column(Float)
+    qty: Mapped[int] = mapped_column(Integer, default=0)  # 가상 운용: 주문 수량, 알림만: 권장 수량
+    amount: Mapped[int] = mapped_column(BigInteger, default=0)
+    body: Mapped[str] = mapped_column(Text)  # 근거·위험·조건·좌석·메모 JSON
+    transcript: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    replaced: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class SleeveOrderRow(Base):
+    __tablename__ = "sleeve_orders"
+    id: Mapped[str] = mapped_column(String(24), primary_key=True)
+    sleeve_id: Mapped[str] = mapped_column(String(8), index=True)
+    signal_id: Mapped[str] = mapped_column(String(24))
+    rev: Mapped[int] = mapped_column(Integer)
+    made_on: Mapped[str] = mapped_column(String(10))
+    code: Mapped[str] = mapped_column(String(16))
+    name: Mapped[str] = mapped_column(String(64))
+    kind: Mapped[str] = mapped_column(String(8), default="stock")
+    side: Mapped[str] = mapped_column(String(4))
+    qty: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(10), index=True)  # pending · filled · expired · replaced · cancelled
+    filled_on: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    note: Mapped[str] = mapped_column(String(200), default="")
+
+
+class SleeveTradeRow(Base):
+    __tablename__ = "sleeve_trades"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    sleeve_id: Mapped[str] = mapped_column(String(8), index=True)
+    rev: Mapped[int] = mapped_column(Integer)
+    d: Mapped[str] = mapped_column(String(10))
+    kind: Mapped[str] = mapped_column(String(10))  # buy · sell · deposit · withdraw
+    code: Mapped[str] = mapped_column(String(16), default="")
+    name: Mapped[str] = mapped_column(String(64), default="")
+    qty: Mapped[int] = mapped_column(Integer, default=0)
+    price: Mapped[int] = mapped_column(Integer, default=0)
+    amount: Mapped[int] = mapped_column(BigInteger, default=0)
+    fee: Mapped[int] = mapped_column(Integer, default=0)
+    tax: Mapped[int] = mapped_column(Integer, default=0)
+    pnl: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    order_id: Mapped[str] = mapped_column(String(24), default="")
+    created_at: Mapped[str] = mapped_column(String(32))
+
+
+SLEEVE_TABLES = ("plan_revisions", "sleeve_books", "sleeve_runs", "sleeve_signals", "sleeve_orders", "sleeve_trades")
+
+
 def make_engine(db_path: Path | str | None) -> Engine:
     """db_path가 None이면 메모리 DB(테스트용)."""
     if db_path is None:

@@ -2,7 +2,7 @@
 
 import * as RD from "@radix-ui/react-dialog";
 import { ChevronRight, CircleAlert, CircleCheck, Info, LoaderCircle, TriangleAlert, X } from "lucide-react";
-import { useId, useRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type KeyboardEvent, type ReactNode, type SelectHTMLAttributes } from "react";
+import { useId, useRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type KeyboardEvent, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
 import { arrow, direction } from "@/lib/format";
 
 export function cx(...parts: (string | false | null | undefined)[]): string {
@@ -117,12 +117,12 @@ export function Panel({ title, actions, children, className, bodyClassName }: { 
   return (
     <section className={cx("rounded-lg border border-divider bg-surface", className)}>
       {(title || actions) && (
-        <header className="flex min-h-12 flex-wrap items-center justify-between gap-2 border-b border-divider px-4 py-2">
+        <header className="flex min-h-11 flex-wrap items-center justify-between gap-2 border-b border-divider px-3 py-1.5 sm:px-4">
           {title && <h2 className="text-h6 font-semibold text-ink">{title}</h2>}
           {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
         </header>
       )}
-      <div className={bodyClassName ?? "p-4"}>{children}</div>
+      <div className={bodyClassName ?? "p-3 sm:p-4"}>{children}</div>
     </section>
   );
 }
@@ -144,7 +144,7 @@ export function Stat({ label, children, hint }: { label: string; children: React
   return (
     <div className="min-w-0 border-t border-ink pt-2">
       <dt className="text-label font-medium text-ink-muted">{label}</dt>
-      <dd className="num mt-1 text-h5 font-semibold text-ink">{children}</dd>
+      <dd className="num mt-1 font-mono text-h5 font-medium tracking-tight text-ink">{children}</dd>
       {hint && <dd className="num text-caption text-ink-muted">{hint}</dd>}
     </div>
   );
@@ -254,6 +254,11 @@ export function TextInput({ className, ...rest }: InputHTMLAttributes<HTMLInputE
   return <input className={cx(CONTROL, className)} {...rest} />;
 }
 
+/** 여러 줄 글(운용 지침 등). 입력칸과 같은 테두리·포커스, 높이는 내용이 아니라 rows로 정한다. */
+export function TextArea({ className, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return <textarea className={cx(CONTROL, "h-auto min-h-24 resize-y py-2 leading-relaxed", className)} {...rest} />;
+}
+
 export function Select({ className, children, ...rest }: SelectHTMLAttributes<HTMLSelectElement>) {
   return (
     <select className={cx(CONTROL, "pr-8", className)} {...rest}>
@@ -324,7 +329,7 @@ export function Tabs<T extends string>({ value, onChange, items, label }: { valu
   };
   return (
     // 좁은 화면(375px)에서도 탭 다섯 개가 한 줄에 다 보이도록 간격을 줄인다(글자 사이는 글자 둘레 여백까지 16px)
-    <div role="tablist" aria-label={label} className="flex max-w-full gap-2 overflow-x-auto border-b border-divider sm:gap-6">
+    <div role="tablist" aria-label={label} className="flex max-w-full gap-2 overflow-x-auto border-b border-divider [scrollbar-width:none] sm:gap-6">
       {items.map((item, index) => {
         const selected = item.value === value;
         return (
@@ -418,7 +423,8 @@ export function Modal({ open, onOpenChange, title, description, children, wide =
 
 // ── 표 공용 클래스(세로선·줄무늬 없이 헤어라인 행 구분, 숫자는 오른쪽 정렬) ──
 
-export const TH = "h-10 border-b border-border px-3 text-left text-label font-medium whitespace-nowrap text-ink-muted";
-export const TD = "h-10 border-b border-divider px-3 py-2 text-body-sm text-ink";
-export const TDR = `${TD} num text-right whitespace-nowrap`;
+// 다크 트레이딩 콘솔 밀도(2026-11-21): 표 행 36px. 숫자 칸은 IBM Plex Mono로 자릿수를 세로로 맞춘다.
+export const TH = "h-9 border-b border-border px-3 text-left text-label font-medium whitespace-nowrap text-ink-muted";
+export const TD = "h-9 border-b border-divider px-3 py-1.5 text-body-sm text-ink";
+export const TDR = "h-9 border-b border-divider px-3 py-1.5 num font-mono text-data text-right whitespace-nowrap text-ink";
 export const THR = `${TH} text-right`;

@@ -11,6 +11,15 @@
         ],
         "createdAt": "2026-11-16T11:02:52.888Z",
         "reason": "Agent: 방향을 고를 때 쓴 지난 시안들이다. 출시되는 화면이 아니고, 채택하지 않은 방향의 서체를 일부러 담고 있다"
+      },
+      {
+        "rule": "border-accent-on-rounded",
+        "value": "*",
+        "files": [
+          "frontend/dist-demo/assets/index-BUGmpiR6.css"
+        ],
+        "createdAt": "2026-11-21T08:16:05.829Z",
+        "reason": "Claude triage: the flagged rule is the global :focus-visible keyboard focus ring (2px accent outline + radius) from frontend/src/styles/index.css, added in commit 36f2fbc; it is an accessibility focus indicator, not an accent border on a card. File is a gitignored build artifact."
       }
     ]
   }

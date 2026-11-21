@@ -45,6 +45,7 @@ KIND_LABELS: dict[str, str] = {
     "breaker": "손실 차단",
     "engine": "엔진",
     "settings": "설정 변경",
+    "sleeve": "내 종목 운용",
     "data": "데이터",
     "broker": "증권사",
     "error": "오류",

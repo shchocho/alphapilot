@@ -138,6 +138,9 @@ class EngineService:
         self.busy: str = ""
         self.last_error: str = ""
         self.data_refreshed_at: str | None = None
+        # 내 종목 운용(app/sleeves). SleeveService가 붙으면 채운다: 일봉 갱신에 더할 종목, 장 마감 뒤 심의
+        self.extra_codes: Callable[[], list[str]] = lambda: []
+        self.sleeves: Any = None
 
     # ── 설정 ───────────────────────────────────────────────────────────────
 
@@ -201,6 +204,7 @@ class EngineService:
             self.bus.publish("status")
             try:
                 codes = [s.code for s in load_universe()] + list(INDEX_CODES)
+                codes += [c for c in self.extra_codes() if c not in codes]
                 report = await asyncio.to_thread(refresh_bars, self.provider, self.store, codes)
                 await asyncio.to_thread(self.load_market)
                 self.data_refreshed_at = clock.now_kst().isoformat(timespec="seconds")
@@ -861,8 +865,21 @@ class Scheduler:
         service.kv.set(SCHEDULER_DONE_KEY, today.isoformat())
         try:
             await self._follow(service.settings())
+            await self._sleeves()
         finally:
             await self._maintain(now)
+
+    async def _sleeves(self) -> None:
+        """내 종목 운용: 대기 주문을 체결하고 차례가 된 바구니를 심의한다. 실패해도 엔진은 멈추지 않는다."""
+        service = self._service
+        sleeves = service.sleeves
+        if sleeves is None or sleeves.current() is None:
+            return
+        try:
+            await sleeves.run(trigger="schedule")
+        except Exception as exc:  # noqa: BLE001 - 바구니 오류가 자동매매 엔진을 막지 않게 기록만 한다
+            log.exception("바구니 심의 실패")
+            service._log(service.settings().env, Event("error", f"바구니 자동 심의 실패: {type(exc).__name__}: {exc}"))
 
     async def _follow(self, st: EngineSettings) -> None:
         """시뮬레이션이 최신을 따라가던 중이면 밀린 거래일을 처리한다."""

@@ -455,3 +455,53 @@ def test_hashed_assets_are_cached_long_and_the_page_itself_is_revalidated(tmp_pa
         assert client.get("/").headers["cache-control"] == "no-cache"
         # 없는 자산 주소에 index.html을 돌려주면 브라우저가 HTML을 스크립트로 읽으려다 실패한다
         assert client.get("/assets/missing-000000.js").status_code == 404
+
+
+# ── 내 종목 운용(바구니) ───────────────────────────────────────────────────────
+
+
+def test_sleeve_endpoints_need_login_and_csrf(ctx):
+    client, _, _ = ctx
+    assert client.get("/api/sleeves").status_code == 401
+    session = Session(client)
+    session.setup()
+    session.login()
+    r = client.put("/api/sleeves/plan", json={"config": {"total": 100_000, "sleeves": []}})  # CSRF 머리글 없음
+    assert r.status_code == 403
+
+
+def test_sleeve_plan_round_trip(ctx, user, monkeypatch):
+    from app.sleeves import service as sleeve_module
+
+    client, service, _ = ctx
+    stocks = load_universe()[:16]
+    monkeypatch.setattr(sleeve_module, "load_universe", lambda: stocks)
+    monkeypatch.setattr(sleeve_module, "universe_map", lambda: {s.code: s for s in stocks})
+    assert user.post("/api/engine/refresh-data").status_code == 200
+    assert client.get("/api/sleeves").json()["plan"] is None
+    looked = client.get("/api/sleeves/lookup", params={"code": "069500"})
+    assert looked.status_code == 200, looked.text
+    code = stocks[0].code
+    body = {"note": "처음", "config": {"total": 1_000_000, "sleeves": [
+        {"name": "중장기", "amount": 500_000, "items": [{"code": code, "name": stocks[0].name}], "cadence": "weekly", "installments": 5},
+        {"name": "ETF", "amount": 400_000, "items": [{"code": "069500", "name": "KODEX 200", "kind": "etf"}], "mode": "alert"},
+    ]}}
+    saved = user.put("/api/sleeves/plan", body)
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["rev"] == 1 and len(saved.json()["overview"]["sleeves"]) == 2
+    too_much = {**body, "config": {**body["config"], "total": 500_000}}
+    assert user.put("/api/sleeves/plan", too_much).status_code == 422
+    run = user.post("/api/sleeves/run", {"force": False})
+    assert run.status_code == 200, run.text
+    assert len(run.json()["sleeves"]) == 2
+    signals = client.get("/api/sleeves/signals").json()["signals"]
+    assert len(signals) == 2
+    detail = client.get(f"/api/sleeves/signals/{signals[0]['id']}")
+    assert detail.status_code == 200 and "thesis" in detail.json()
+    sid = saved.json()["overview"]["sleeves"][0]["id"]
+    assert client.get(f"/api/sleeves/{sid}/performance").status_code == 200
+    preview = user.post("/api/sleeves/preview", {"start": "2026-06-01"})
+    assert preview.status_code == 200, preview.text
+    revs = client.get("/api/sleeves/revisions").json()["revisions"]
+    assert [r["rev"] for r in revs] == [1]
+    assert user.post("/api/sleeves/revisions/1/restore", {}).status_code == 409  # 지금 쓰는 판(EngineError)
