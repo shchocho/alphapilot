@@ -24,13 +24,29 @@ export const sourceLabel = (source: string | null | undefined): string =>
 // ── 위원 의견 ───────────────────────────────────────────────────────────
 
 /** 의견 값(−1~+1)을 가운데 0에서 좌우로 뻗는 막대로 그린다. 방향은 뻗는 쪽과 옆의 글자(긍정·부정)·부호가 전한다. */
-function OpinionBar({ value, abstained }: { value: number; abstained: boolean }) {
+export function OpinionBar({ value, abstained }: { value: number; abstained: boolean }) {
   const half = Math.max(0, Math.min(1, Math.abs(value))) * 50;
   return (
     <div aria-hidden className="relative h-1 rounded-full bg-divider">
       <span className="absolute top-1/2 left-1/2 h-3 w-px -translate-y-1/2 bg-ink-muted" />
       {!abstained && half > 0 && <span className="absolute top-0 h-full rounded-full bg-ink-secondary" style={value >= 0 ? { left: "50%", width: `${half}%` } : { right: "50%", width: `${half}%` }} />}
     </div>
+  );
+}
+
+/** 위원 한 명이 의견을 낸 근거. 통과·미달로 갈리는 항목(만점 1점)에만 표시를 붙인다. */
+export function SeatEvidence({ components }: { components: Seat["components"] }) {
+  return (
+    <ul className="space-y-1">
+      {components.map((c) => (
+        <li key={c.name} className="num flex items-start gap-2 text-label text-ink-secondary">
+          {c.max_points === 1 ? c.points >= 1 ? <Check aria-label="통과" className="mt-1 size-4 shrink-0 text-success" /> : <X aria-label="미달" className="mt-1 size-4 shrink-0 text-danger" /> : null}
+          <span>
+            <span className="text-ink">{c.name}</span> · {c.detail}
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -56,16 +72,9 @@ export function SeatList({ seats }: { seats: Seat[] }) {
                 <DisclosureIcon />
                 근거 {seat.components.length}개 보기
               </summary>
-              <ul className="mt-1 space-y-1">
-                {seat.components.map((c) => (
-                  <li key={c.name} className="num flex items-start gap-2 text-label text-ink-secondary">
-                    {c.max_points === 1 ? c.points >= 1 ? <Check aria-label="통과" className="mt-1 size-4 shrink-0 text-success" /> : <X aria-label="미달" className="mt-1 size-4 shrink-0 text-danger" /> : null}
-                    <span>
-                      <span className="text-ink">{c.name}</span> · {c.detail}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              <div className="mt-1">
+                <SeatEvidence components={seat.components} />
+              </div>
             </details>
           )}
         </li>
