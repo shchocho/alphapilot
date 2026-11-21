@@ -10,11 +10,12 @@
 - 외부로 보내는 동작: 다른 도메인으로 제출하는 form, `meta refresh`·`location.replace`로 외부 이동, 단축 URL, 외부 로그인 페이지를 띄우는 iframe.
 - 숨긴 코드: `eval`, `new Function`, `atob`·base64로 감싼 스크립트, 출처 불명 CDN.
 - 실행 파일 직접 배포: `.exe` `.msi` `.apk` `.dmg`, 암호 걸린 `.zip`.
+- 카카오톡·카카오 로그인(사용자 지시, 2026-11-21): 알림 연결 화면, "카카오 로그인"·"카카오톡으로 받기" 같은 단추와 문구, 카카오 로고와 색. 카카오톡 알림은 직접 띄운 서버(내 PC·클라우드)에서만 쓰고 공개 데모 빌드에는 넣지 않는다. 다른 회사 로그인을 흉내 낸 화면으로 읽히기 쉽다. 종목 이름(카카오게임즈·카카오뱅크·카카오페이)은 시세 데이터라 해당하지 않는다.
 
 배포 전에 이 명령으로 점검하고, 걸린 항목은 고치거나 남기는 이유를 적는다.
 
 ```
-grep -rniE 'type="password"|current-password|autocomplete="username"|비밀번호|로그인|sign ?in|api.?key|secret|계좌|카드번호|\botp\b|eval\(|new Function|atob\(|http-equiv="refresh"|\.exe|\.msi|\.apk' --exclude-dir=node_modules --exclude-dir=.git .
+grep -rniE 'type="password"|current-password|autocomplete="username"|비밀번호|로그인|sign ?in|api.?key|secret|계좌|카드번호|\botp\b|eval\(|new Function|atob\(|http-equiv="refresh"|\.exe|\.msi|\.apk|카카오톡|카카오 ?로그인|kakao' --exclude-dir=node_modules --exclude-dir=.git .
 ```
 
 배포 후에는 `https://transparencyreport.google.com/safe-browsing/search?url=<호스트>` 조회와 Edge로 직접 열기로 경고가 없는지 확인한다. 판정을 받으면 원인을 없앤 뒤 Google 세이프 브라우징 오류 신고(또는 Search Console 검토 요청)와 Edge 경고 화면의 '이 사이트에 위협이 없다고 보고'를 각각 제출한다.
