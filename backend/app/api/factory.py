@@ -43,6 +43,8 @@ from app.engine.core import EngineConfig
 from app.engine.service import EngineError, EngineService, Scheduler
 from app.journal.ledger import row_to_dict
 from app.risk.limits import RiskLimits
+from app.sleeves.config import CODE_PATTERN, SLEEVE_ID_PATTERN, PlanConfig
+from app.sleeves.service import SleeveService
 from app.store.db import BacktestRow, make_engine, make_session_factory
 from app.store.lock import EngineLock
 from app.store.maintenance import MaintenancePlan, run_daily
@@ -99,6 +101,25 @@ class SimResetBody(BaseModel):
 
 class ConfirmBody(BaseModel):
     confirm: str = Field("", max_length=64)
+
+
+class PlanBody(BaseModel):
+    config: PlanConfig
+    note: str = Field("", max_length=200)
+
+
+class RestoreBody(BaseModel):
+    note: str = Field("", max_length=200)
+
+
+class SleeveRunBody(BaseModel):
+    force: bool = False
+    sleeve_ids: list[str] | None = Field(None, max_length=6)
+
+
+class PreviewBody(BaseModel):
+    config: PlanConfig | None = None
+    start: date
 
 
 class BacktestBody(BaseModel):
@@ -162,6 +183,7 @@ def create_app(
     factory = session_factory or make_session_factory(make_engine(config.db_path))
     db_engine = factory.kw.get("bind")
     svc = service or EngineService(config, factory)
+    sleeves: SleeveService = svc.sleeves or SleeveService(svc)
     auth = Auth(config, factory)
     plan = MaintenancePlan(backup_dir=config.backup_dir, backup_keep=config.backup_keep, idle_timeout=IDLE_TIMEOUT)
     scheduler = Scheduler(svc, maintenance=(lambda now: run_daily(db_engine, factory, plan, now)) if db_engine is not None else None)
@@ -471,6 +493,62 @@ def create_app(
             raise EngineError("시뮬레이션 환경에서만 초기화할 수 있습니다")
         result = svc.sim_reset(body.start, body.initial_cash)
         auth.audit("sim_reset", result, client_ip(request))
+        return result
+
+    # 내 종목 운용(바구니). docs/sleeves.md
+    @api.get("/sleeves")
+    def sleeves_overview() -> dict[str, Any]:
+        return sleeves.overview()
+
+    @api.put("/sleeves/plan")
+    def sleeves_save(body: PlanBody, request: Request) -> dict[str, Any]:
+        result = sleeves.save(body.config, body.note)
+        auth.audit("sleeves_plan", {"rev": result["rev"]}, client_ip(request))
+        return {**result, "overview": sleeves.overview()}
+
+    @api.get("/sleeves/revisions")
+    def sleeves_revisions() -> dict[str, Any]:
+        return {"revisions": sleeves.revisions()}
+
+    @api.post("/sleeves/revisions/{rev}/restore")
+    def sleeves_restore(rev: int, body: RestoreBody, request: Request) -> dict[str, Any]:
+        result = sleeves.restore(rev, body.note)
+        auth.audit("sleeves_restore", {"from": rev, "rev": result["rev"]}, client_ip(request))
+        return {**result, "overview": sleeves.overview()}
+
+    @api.get("/sleeves/lookup")
+    async def sleeves_lookup(code: Annotated[str, Query(pattern=CODE_PATTERN)]) -> dict[str, Any]:
+        return await asyncio.to_thread(sleeves.lookup, code)
+
+    @api.get("/sleeves/estimate")
+    def sleeves_estimate(force: bool = False) -> dict[str, Any]:
+        return sleeves.estimate(force=force)
+
+    @api.post("/sleeves/run")
+    async def sleeves_run(body: SleeveRunBody) -> dict[str, Any]:
+        return await sleeves.run(trigger="manual", force=body.force, sleeve_ids=body.sleeve_ids)
+
+    @api.post("/sleeves/preview")
+    async def sleeves_preview(body: PreviewBody) -> dict[str, Any]:
+        return await sleeves.preview(body.config, body.start)
+
+    @api.get("/sleeves/signals")
+    def sleeves_signals(sleeve_id: Annotated[str | None, Query(pattern=SLEEVE_ID_PATTERN)] = None,
+                        limit: Annotated[int, Query(ge=1, le=500)] = 100) -> dict[str, Any]:
+        return {"signals": sleeves.signals(sleeve_id, limit)}
+
+    @api.get("/sleeves/signals/{signal_id}")
+    def sleeves_signal(signal_id: Annotated[str, Path_(r"^g[0-9a-f]{16}$")]) -> dict[str, Any]:
+        return sleeves.signal(signal_id)
+
+    @api.get("/sleeves/{sleeve_id}/performance")
+    async def sleeves_performance(sleeve_id: Annotated[str, Path_(SLEEVE_ID_PATTERN)]) -> dict[str, Any]:
+        return await asyncio.to_thread(sleeves.performance, sleeve_id)
+
+    @api.post("/sleeves/{sleeve_id}/liquidate")
+    def sleeves_liquidate(sleeve_id: Annotated[str, Path_(SLEEVE_ID_PATTERN)], request: Request) -> dict[str, Any]:
+        result = sleeves.liquidate(sleeve_id)
+        auth.audit("sleeves_liquidate", {"sleeve_id": sleeve_id}, client_ip(request))
         return result
 
     # 백테스트

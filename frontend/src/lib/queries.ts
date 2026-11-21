@@ -100,6 +100,7 @@ export function useLiveEvents(enabled: boolean): void {
         return;
       }
       void queryClient.invalidateQueries({ queryKey: ["status"] });
+      if (kind === "sleeves") void queryClient.invalidateQueries({ queryKey: ["sleeves"] });
       if (kind === "ledger" && timer === undefined) {
         timer = window.setTimeout(() => {
           timer = undefined;

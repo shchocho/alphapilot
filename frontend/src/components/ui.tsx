@@ -2,7 +2,7 @@
 
 import * as RD from "@radix-ui/react-dialog";
 import { ChevronRight, CircleAlert, CircleCheck, Info, LoaderCircle, TriangleAlert, X } from "lucide-react";
-import { useId, useRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type KeyboardEvent, type ReactNode, type SelectHTMLAttributes } from "react";
+import { useId, useRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type KeyboardEvent, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
 import { arrow, direction } from "@/lib/format";
 
 export function cx(...parts: (string | false | null | undefined)[]): string {
@@ -252,6 +252,11 @@ export function Field({ label, hint, error, className, children }: FieldProps) {
 
 export function TextInput({ className, ...rest }: InputHTMLAttributes<HTMLInputElement>) {
   return <input className={cx(CONTROL, className)} {...rest} />;
+}
+
+/** 여러 줄 글(운용 지침 등). 입력칸과 같은 테두리·포커스, 높이는 내용이 아니라 rows로 정한다. */
+export function TextArea({ className, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return <textarea className={cx(CONTROL, "h-auto min-h-24 resize-y py-2 leading-relaxed", className)} {...rest} />;
 }
 
 export function Select({ className, children, ...rest }: SelectHTMLAttributes<HTMLSelectElement>) {

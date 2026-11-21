@@ -13,7 +13,7 @@ from app.core.clock import kst
 from app.engine.settings import WHOLE, EngineSettings, KVStore, tolerant_load
 from app.risk.limits import RiskLimits
 from app.store import migrate as migrate_module
-from app.store.db import Base, LoginAttemptRow, SessionRow, make_engine, make_session_factory
+from app.store.db import SLEEVE_TABLES, Base, LoginAttemptRow, SessionRow, make_engine, make_session_factory
 from app.store.lock import EngineLock, EngineLockError
 from app.store.maintenance import (
     MaintenancePlan,
@@ -45,7 +45,8 @@ def test_a_new_database_is_created_at_the_latest_version(tmp_path):
 def test_a_database_from_before_versioning_is_taken_as_v1_without_touching_data(tmp_path):
     path = tmp_path / "ap.db"
     legacy = create_engine(f"sqlite:///{path.as_posix()}")
-    Base.metadata.create_all(legacy)
+    v1_tables = [t for name, t in Base.metadata.tables.items() if name not in SLEEVE_TABLES]
+    Base.metadata.create_all(legacy, tables=v1_tables)
     with legacy.begin() as conn:
         conn.execute(text("INSERT INTO kv(key, value, updated_at) VALUES ('engine_settings', '{}', 'x')"))
     legacy.dispose()
@@ -55,7 +56,15 @@ def test_a_database_from_before_versioning_is_taken_as_v1_without_touching_data(
     with engine.connect() as conn:
         assert schema_version(conn) == LATEST
         assert conn.execute(text("SELECT count(*) FROM kv")).scalar_one() == 1
-    assert not (tmp_path / "backups").exists()  # 올릴 버전이 없으면 사본도 만들지 않는다
+        assert set(SLEEVE_TABLES) <= set(inspect(conn).get_table_names())  # v2: 바구니 표가 생겼다
+    assert list((tmp_path / "backups").glob("*pre-migrate-v1*"))  # 올리기 전에 v1 사본을 남겼다
+
+
+def test_a_new_database_already_has_the_sleeve_tables(tmp_path):
+    engine = make_engine(tmp_path / "ap.db")
+    with engine.connect() as conn:
+        assert set(SLEEVE_TABLES) <= set(inspect(conn).get_table_names())
+    assert not (tmp_path / "backups").exists()  # 새 DB는 올릴 버전이 없어 사본을 만들지 않는다
 
 
 def _v1_metadata() -> MetaData:

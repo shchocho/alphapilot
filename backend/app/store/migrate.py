@@ -31,9 +31,17 @@ log = logging.getLogger("alphapilot.migrate")
 
 Migration = tuple[int, str, Callable[[Connection], None]]
 
+def _v2_sleeves(conn: Connection) -> None:
+    """내 종목 운용(바구니) 표 여섯 개를 만든다. 기존 표는 건드리지 않는다."""
+    from app.store.db import SLEEVE_TABLES, Base
+
+    Base.metadata.create_all(conn, tables=[Base.metadata.tables[name] for name in SLEEVE_TABLES])
+
+
 # v1: 2026-11-17 기준의 표 전체(버전 관리를 넣기 전에 만든 DB는 모두 이 모양이다).
-MIGRATIONS: tuple[Migration, ...] = ()
-LATEST = 1
+# v2: 2026-11-21 내 종목 운용(바구니) 표.
+MIGRATIONS: tuple[Migration, ...] = ((2, "내 종목 운용(바구니) 표", _v2_sleeves),)
+LATEST = 2
 
 
 class SchemaError(RuntimeError):
