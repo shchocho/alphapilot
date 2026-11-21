@@ -12,6 +12,14 @@ export interface AuthState {
   setup_token_required: boolean;
 }
 
+export interface Account {
+  username: string;
+  recovery_codes_left: number;
+}
+
+/** 증권사 키가 어디서 왔는지. 키 값은 화면으로 내려오지 않는다. */
+export type BrokerKeySources = Record<"mock" | "live", "db" | "env" | null>;
+
 export interface RegimeBrief {
   label: string;
   score: number;

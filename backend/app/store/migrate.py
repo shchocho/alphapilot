@@ -31,9 +31,19 @@ log = logging.getLogger("alphapilot.migrate")
 
 Migration = tuple[int, str, Callable[[Connection], None]]
 
+def _v2_login_id(conn: Connection) -> None:
+    # 기존 관리자는 아이디 'admin'으로 들어온다. broker_keys 표는 migrate() 끝의 create_all이 만든다.
+    have = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(users)")}
+    for column in ("username VARCHAR(32) NOT NULL DEFAULT 'admin'", "totp_pending_enc TEXT", "recovery_codes TEXT NOT NULL DEFAULT '[]'"):
+        if column.split()[0] not in have:  # 버전 표시 없이 새 모양으로 만든 DB도 받아 준다
+            conn.exec_driver_sql(f"ALTER TABLE users ADD COLUMN {column}")
+
+
 # v1: 2026-11-17 기준의 표 전체(버전 관리를 넣기 전에 만든 DB는 모두 이 모양이다).
-MIGRATIONS: tuple[Migration, ...] = ()
-LATEST = 1
+MIGRATIONS: tuple[Migration, ...] = (
+    (2, "로그인 아이디·복구 코드·인증 앱 재연결", _v2_login_id),
+)
+LATEST = 2
 
 
 class SchemaError(RuntimeError):

@@ -16,7 +16,7 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, Depends, FastAPI, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, SecretStr, ValidationError
 from sqlalchemy import text
 from sqlalchemy.orm import Session, sessionmaker
 from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -56,6 +56,7 @@ SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 # ── 요청 본문 ─────────────────────────────────────────────────────────────────
 
 class SetupBody(BaseModel):
+    username: str = Field(min_length=1, max_length=64)
     password: str = Field(min_length=1, max_length=256)
     setup_token: str = Field("", max_length=256)
 
@@ -65,8 +66,20 @@ class CodeBody(BaseModel):
 
 
 class LoginBody(BaseModel):
+    username: str = Field(min_length=1, max_length=64)
     password: str = Field(min_length=1, max_length=256)
-    code: str = Field(min_length=6, max_length=8)
+    code: str = Field(min_length=6, max_length=16)  # 인증 앱 6자리 또는 복구 코드(xxxxx-xxxxx)
+
+
+class PasswordBody(BaseModel):
+    current: str = Field(min_length=1, max_length=256)
+    new: str = Field(min_length=1, max_length=256)
+
+
+class BrokerKeysBody(BaseModel):
+    env: Literal["mock", "live"]
+    app_key: str = Field(min_length=8, max_length=512)
+    secret_key: str = Field(min_length=8, max_length=512)
 
 
 class DecideBody(BaseModel):
@@ -163,6 +176,17 @@ def create_app(
     db_engine = factory.kw.get("bind")
     svc = service or EngineService(config, factory)
     auth = Auth(config, factory)
+    env_keys = {env: config.kiwoom_keys(env) for env in ("mock", "live")}  # .env 값. DB 키를 지우면 이것으로 돌아간다
+
+    def apply_broker_keys() -> None:
+        """DB에 저장한 증권사 키가 있으면 .env 값 대신 쓴다. 키를 읽는 곳은 모두 config를 보므로 여기서 바꿔 둔다."""
+        stored = auth.broker_keys()
+        for env in ("mock", "live"):
+            app_key, secret = stored.get(env, env_keys[env])
+            setattr(config, f"kiwoom_{env}_app_key", SecretStr(app_key))
+            setattr(config, f"kiwoom_{env}_secret_key", SecretStr(secret))
+
+    apply_broker_keys()
     plan = MaintenancePlan(backup_dir=config.backup_dir, backup_keep=config.backup_keep, idle_timeout=IDLE_TIMEOUT)
     scheduler = Scheduler(svc, maintenance=(lambda now: run_daily(db_engine, factory, plan, now)) if db_engine is not None else None)
     engine_lock = EngineLock(config.lock_path)
@@ -258,18 +282,17 @@ def create_app(
 
     @public.post("/auth/setup")
     def auth_setup(body: SetupBody, request: Request) -> dict[str, str]:
-        return auth.begin_setup(body.password, body.setup_token, client_ip(request))
+        return auth.begin_setup(body.username, body.password, body.setup_token, client_ip(request))
 
     @public.post("/auth/setup/confirm")
-    def auth_setup_confirm(body: CodeBody, request: Request) -> dict[str, bool]:
-        auth.confirm_setup(body.code, client_ip(request))
-        return {"ok": True}
+    def auth_setup_confirm(body: CodeBody, request: Request) -> dict[str, Any]:
+        return {"ok": True, "recovery_codes": auth.confirm_setup(body.code, client_ip(request))}
 
     @public.post("/auth/login")
     def auth_login(body: LoginBody, request: Request, response: Response) -> dict[str, Any]:
-        token, session = auth.login(body.password, body.code, client_ip(request), request.headers.get("user-agent", ""))
+        token, session = auth.login(body.username, body.password, body.code, client_ip(request), request.headers.get("user-agent", ""))
         response.set_cookie(SESSION_COOKIE, token, httponly=True, secure=config.is_prod, samesite="strict", max_age=7 * 24 * 3600, path="/")
-        return {"ok": True, "csrf": session.csrf}
+        return {"ok": True, "csrf": session.csrf, "recovery": session.elevated}
 
     @public.post("/auth/logout")
     def auth_logout(request: Request, response: Response) -> dict[str, bool]:
@@ -289,6 +312,27 @@ def create_app(
     def auth_logout_all(_: Elevated, response: Response) -> dict[str, int]:
         response.delete_cookie(SESSION_COOKIE, path="/")
         return {"closed": auth.logout_all()}
+
+    @api.get("/auth/account")
+    def auth_account() -> dict[str, Any]:
+        return auth.account()
+
+    @api.post("/auth/password")
+    def auth_password(body: PasswordBody, session: Elevated, request: Request) -> dict[str, int]:
+        return {"closed": auth.change_password(session, body.current, body.new, client_ip(request))}
+
+    @api.post("/auth/recovery-codes")
+    def auth_recovery_codes(_: Elevated, request: Request) -> dict[str, list[str]]:
+        return {"recovery_codes": auth.new_recovery_codes(client_ip(request))}
+
+    @api.post("/auth/totp/reset")
+    def auth_totp_reset(_: Elevated) -> dict[str, str]:
+        return auth.begin_totp_reset()
+
+    @api.post("/auth/totp/confirm")
+    def auth_totp_confirm(body: CodeBody, _: Elevated, request: Request) -> dict[str, bool]:
+        auth.confirm_totp_reset(body.code, client_ip(request))
+        return {"ok": True}
 
     @api.get("/auth/sessions")
     def auth_sessions() -> dict[str, Any]:
@@ -444,12 +488,30 @@ def create_app(
         auth.audit("env_switch", {"env": st.env}, client_ip(request))
         return {"env": st.env}
 
+    @api.get("/settings/broker/keys")
+    def broker_keys_source() -> dict[str, str | None]:
+        """키가 어디서 왔는지만 알린다(db | env | None). 키 값은 절대 내려보내지 않는다."""
+        stored = auth.broker_keys()
+        return {env: "db" if env in stored else ("env" if all(env_keys[env]) else None) for env in ("mock", "live")}
+
+    @api.put("/settings/broker/keys")
+    def broker_keys_save(body: BrokerKeysBody, _: Elevated, request: Request) -> dict[str, bool]:
+        auth.save_broker_keys(body.env, body.app_key.strip(), body.secret_key.strip(), client_ip(request))
+        apply_broker_keys()
+        return {"ok": True}
+
+    @api.delete("/settings/broker/keys/{env}")
+    def broker_keys_delete(env: Literal["mock", "live"], _: Elevated, request: Request) -> dict[str, bool]:
+        auth.delete_broker_keys(env, client_ip(request))
+        apply_broker_keys()
+        return {"ok": True}
+
     @api.post("/settings/broker/test")
     async def broker_test(body: BrokerTestBody, request: Request) -> dict[str, Any]:
         """키움 연결 테스트: 토큰 발급 + 잔고 조회(읽기 전용). 키 값은 응답에 넣지 않는다."""
         if not config.has_kiwoom_keys(body.env):
             prefix = "KIWOOM_MOCK" if body.env == "mock" else "KIWOOM_LIVE"
-            return {"ok": False, "message": f"서버 환경변수 {prefix}_APP_KEY, {prefix}_SECRET_KEY가 설정되지 않았습니다"}
+            return {"ok": False, "message": f"키가 없습니다. 설정 화면에서 넣거나 서버 환경변수 {prefix}_APP_KEY, {prefix}_SECRET_KEY를 설정하세요"}
         client = KiwoomClient(body.env, *config.kiwoom_keys(body.env))
         try:
             token = await client.token()
