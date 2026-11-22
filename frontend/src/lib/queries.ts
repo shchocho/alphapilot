@@ -5,6 +5,8 @@ import { useEffect } from "react";
 import { toast } from "sonner";
 import { api, ApiError, DEMO, errorMessage } from "./api";
 import type {
+  Account,
+  BrokerKeySources,
   AuthState, BacktestResult, BacktestRun, Committee, Dashboard, DecisionDetail, IntentCard, Portfolio, Screener, SettingsView,
   Status, StockDetail,
 } from "./types";
@@ -71,6 +73,10 @@ export interface SessionsView {
   sessions: { created_at: string; last_seen: string; ip: string; user_agent: string }[];
   audit: { ts: string; actor: string; action: string; detail: Record<string, unknown>; ip: string }[];
 }
+export const useAccount = () => useQuery({ queryKey: ["account"], queryFn: () => api.get<Account>("/api/auth/account") });
+
+export const useBrokerKeys = () => useQuery({ queryKey: ["broker-keys"], queryFn: () => api.get<BrokerKeySources>("/api/settings/broker/keys") });
+
 export const useSessions = () => useQuery({ queryKey: ["sessions"], queryFn: () => api.get<SessionsView>("/api/auth/sessions") });
 
 /** 계좌·장부에 영향을 주는 동작 뒤에 관련 화면을 모두 새로 읽는다. */
