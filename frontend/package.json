@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "build:demo": "vite build --mode demo --base /alphapilot/ --outDir dist-demo && node -e \"require('fs').copyFileSync('dist-demo/index.html','dist-demo/404.html')\"",
+    "build:demo": "vite build --mode demo --base /alphapilot/ --outDir dist-demo && node -e \"require('fs').copyFileSync('dist-demo/index.html','dist-demo/404.html')\" && node scripts/check-demo.mjs",
+    "check:demo": "node scripts/check-demo.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "preview": "vite preview"
