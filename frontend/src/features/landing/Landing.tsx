@@ -555,7 +555,7 @@ function Enter({ children }: { children: ReactNode }) {
             </ul>
           ) : (
             <ul className="mt-6 max-w-reading space-y-3 text-body text-ink-secondary">
-              <li>비밀번호와 인증 앱의 6자리 코드가 둘 다 있어야 들어옵니다.</li>
+              <li>아이디, 비밀번호, 인증 앱의 6자리 코드가 모두 있어야 들어옵니다.</li>
               <li>지금은 지난 일봉으로 가상 계좌를 굴리는 시뮬레이션만 주문합니다. 키움 모의투자·실전 주문 실행은 아직 없습니다.</li>
             </ul>
           )}

@@ -135,7 +135,7 @@ export function SetupFlow({ tokenRequired, resumed, onDone }: { tokenRequired: b
       <AuthFrame title="복구 코드 저장" lead="인증 앱을 잃어버렸을 때 이 코드로 로그인합니다. 지금 한 번만 보여 줍니다.">
         <RecoveryCodes codes={codes} />
         <Button variant="primary" className="mt-4 w-full" onClick={onDone}>
-          저장했습니다. 시작하기
+          저장했습니다. 로그인하러 가기
         </Button>
       </AuthFrame>
     );
