@@ -6,14 +6,13 @@
 
 import { FastForward, RotateCcw, StepForward } from "lucide-react";
 import { lazy, Suspense, useEffect, useState, type FormEvent } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Button, Check, cx, Empty, ErrorState, Field, Modal, Notice, PageHeader, Panel, RadioRow, SkeletonRows, Tabs, TD, TDR, TextInput, TH, THR } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import { dayDots, dayLabel, num, won, wonShort } from "@/lib/format";
-import { notifyError, refreshAll, usePending, useSettings, useStatus } from "@/lib/queries";
-import { useElevated } from "@/lib/stepup";
-import type { EngineSettings, IntentCard, SettingsView } from "@/lib/types";
+import { notifyError, refreshAll, useSaveEngine, usePending, useSettings, useStatus } from "@/lib/queries";
+import type { IntentCard, SettingsView } from "@/lib/types";
 import { ApprovalCard, useStableCards } from "./ApprovalCard";
 
 const SleevesView = lazy(() => import("./sleeves/SleevesView"));
@@ -119,59 +118,60 @@ function AutoView({ view, cards }: { view: SettingsView; cards: IntentCard[] }) 
   );
 }
 
-/** 설정 한 묶음을 저장한다. 위험해지는 변경이면 서버가 재인증을 요구하고, 그때 코드 입력 창이 뜬다. */
-function useSaveEngine() {
-  const elevated = useElevated();
-  const [busy, setBusy] = useState(false);
-  const save = async (patch: Partial<EngineSettings>, done: string) => {
-    setBusy(true);
-    try {
-      await elevated(() => api.put("/api/settings/engine", patch));
-      toast.success(done);
-      refreshAll();
-      return true;
-    } catch (e) {
-      notifyError(e);
-      return false;
-    } finally {
-      setBusy(false);
-    }
-  };
-  return { save, busy };
-}
-
 function AutomationPanel({ view }: { view: SettingsView }) {
   const { save, busy } = useSaveEngine();
   const engine = view.engine;
   const [limit, setLimit] = useState(String(engine.auto_max_order_value));
   useEffect(() => setLimit(String(engine.auto_max_order_value)), [engine.auto_max_order_value]);
   const limitValue = Number(limit.replace(/\D/g, ""));
+  // 고르기와 저장을 나눈다. 라디오는 화살표 키로 옮겨 다니기만 해도 바뀌므로, 바뀔 때마다 저장하면 지나친 단계까지 저장된다.
+  const [level, setLevel] = useState(engine.automation_level);
+  useEffect(() => setLevel(engine.automation_level), [engine.automation_level]);
+  const picked = view.options.automation.find((option) => option.value === level);
 
   return (
     <Panel title="자동화 단계">
-      <fieldset disabled={busy} className="space-y-2">
-        <legend className="sr-only">자동화 단계 고르기</legend>
-        {view.options.automation.map((option) => {
-          const on = engine.automation_level === option.value;
-          return (
-            <label key={option.value} className={cx("flex cursor-pointer gap-3 rounded-md border p-3 transition-colors duration-(--duration-fast)", on ? "border-ink bg-surface-sunken" : "border-divider hover:border-border")}>
-              <input
-                type="radio"
-                name="automation"
-                className="mt-1 size-5 shrink-0 accent-accent"
-                checked={on}
-                onChange={() => void save({ automation_level: option.value }, `자동화 단계를 '${option.label}'으로 바꿨습니다`)}
-              />
-              <span className="min-w-0">
-                <span className="block text-h6 font-semibold text-ink">
-                  {option.value}단계 · {option.label}
+      <form
+        onSubmit={(event: FormEvent) => {
+          event.preventDefault();
+          if (picked) void save({ automation_level: picked.value }, `자동화 단계를 '${picked.label}'으로 바꿨습니다`);
+        }}
+      >
+        <fieldset disabled={busy} className="space-y-2">
+          <legend className="sr-only">자동화 단계 고르기</legend>
+          {view.options.automation.map((option) => {
+            const on = level === option.value;
+            return (
+              <label key={option.value} className={cx("flex cursor-pointer gap-3 rounded-md border p-3 transition-colors duration-(--duration-fast)", on ? "border-ink bg-surface-sunken" : "border-divider hover:border-border")}>
+                <input
+                  type="radio"
+                  name="automation"
+                  className="mt-1 size-5 shrink-0 accent-accent"
+                  checked={on}
+                  onChange={() => setLevel(option.value)}
+                />
+                <span className="min-w-0">
+                  <span className="block text-h6 font-semibold text-ink">
+                    {option.value}단계 · {option.label}
+                    {engine.automation_level === option.value && <span className="ml-2 text-label font-medium text-ink-muted">지금 단계</span>}
+                  </span>
+                  <span className="block text-body-sm text-ink-secondary">{LEVEL_TEXT[option.value]}</span>
                 </span>
-                <span className="block text-body-sm text-ink-secondary">{LEVEL_TEXT[option.value]}</span>
-              </span>
-            </label>
-          );
-        })}
-      </fieldset>
+              </label>
+            );
+          })}
+        </fieldset>
+        {level !== engine.automation_level && (
+          <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+            <Button onClick={() => setLevel(engine.automation_level)} disabled={busy}>
+              취소
+            </Button>
+            <Button type="submit" variant="primary" busy={busy}>
+              {level}단계로 바꾸기
+            </Button>
+          </div>
+        )}
+      </form>
       <form
         className="mt-4 flex flex-wrap items-end gap-2"
         onSubmit={(event: FormEvent) => {
@@ -194,33 +194,54 @@ function AutomationPanel({ view }: { view: SettingsView }) {
 function DeciderPanel({ view }: { view: SettingsView }) {
   const { save, busy } = useSaveEngine();
   const engine = view.engine;
+  // 자동화 단계와 같은 이유로 고르기와 저장을 나눈다
+  const [choice, setChoice] = useState(engine.decider);
+  useEffect(() => setChoice(engine.decider), [engine.decider]);
   return (
     <Panel title="누가 최종 판단을 내리나">
-      <RadioRow
-        legend="판단 주체"
-        name="decider"
-        disabled={busy}
-        value={engine.decider}
-        onChange={(value) => void save({ decider: value }, value === "ai" ? "AI 위원회가 판단합니다" : value === "hybrid" ? "규칙이 판단하고 애매한 분기만 AI에게 묻습니다" : "규칙 위원회가 판단합니다")}
-        options={[
-          { value: "ai", label: "AI 위원회" },
-          { value: "rules", label: "규칙 위원회" },
-          { value: "hybrid", label: "규칙 + AI 분기" },
-        ]}
-      />
+      <form
+        onSubmit={(event: FormEvent) => {
+          event.preventDefault();
+          void save({ decider: choice }, choice === "ai" ? "AI 위원회가 판단합니다" : choice === "hybrid" ? "규칙이 판단하고 애매한 분기만 AI에게 묻습니다" : "규칙 위원회가 판단합니다");
+        }}
+        className="flex flex-wrap items-center justify-between gap-2"
+      >
+        <RadioRow
+          legend="판단 주체"
+          name="decider"
+          disabled={busy}
+          value={choice}
+          onChange={setChoice}
+          options={[
+            { value: "ai", label: "AI 위원회" },
+            { value: "rules", label: "규칙 위원회" },
+            { value: "hybrid", label: "규칙 + AI 분기" },
+          ]}
+        />
+        {choice !== engine.decider && (
+          <span className="flex gap-2">
+            <Button onClick={() => setChoice(engine.decider)} disabled={busy}>
+              취소
+            </Button>
+            <Button type="submit" variant="primary" busy={busy}>
+              바꾸기
+            </Button>
+          </span>
+        )}
+      </form>
       <p className="mt-3 text-body-sm text-ink-secondary">
-        {engine.decider === "ai"
-          ? "강세·약세 연구원이 토론하고 리스크 검토자가 점검한 뒤 의장이 결론을 냅니다. AI가 답하지 못하거나 예산을 넘으면 그 건은 사지 않고 보류합니다."
-          : engine.decider === "hybrid"
+        {choice === "ai"
+          ? "강세·약세 연구원이 토론하고 리스크 검토자가 점검한 뒤 위원장이 결론을 냅니다. AI가 답하지 못하거나 예산을 넘으면 그 건은 사지 않고 보류합니다."
+          : choice === "hybrid"
             ? "규칙 위원회가 결론을 내고, 규칙만으로 가르기 애매할 때만 AI에게 한 번 묻습니다. 애매한 경우는 문턱 근처 점수, 위원 의견 충돌, 리스크 경고, 손실 중인 보유 종목입니다. 위험을 줄이는 답은 그대로 따르고, 위험을 늘리는 답은 AI 확신이 보통 이상일 때만 따릅니다. AI가 답하지 못하면 규칙 결론을 씁니다."
             : "위원 의견을 가중 평균해 정해진 문턱을 넘으면 매수합니다. AI 비용이 들지 않고 결과가 항상 같습니다."}
       </p>
-      {engine.decider === "hybrid" && !view.ai.configured && (
+      {choice === "hybrid" && !view.ai.configured && (
         <div className="mt-3">
           <Notice tone="warning">서버에 AI 키(ANTHROPIC_API_KEY)가 없어 분기에서도 AI에게 묻지 못합니다. 키를 넣기 전에는 규칙 위원회와 똑같이 움직입니다.</Notice>
         </div>
       )}
-      {engine.decider === "ai" && !view.ai.configured && (
+      {choice === "ai" && !view.ai.configured && (
         <div className="mt-3">
           <Notice tone="warning">서버에 AI 키(ANTHROPIC_API_KEY)가 없습니다. 이대로 두면 AI 위원회가 판단하지 못해 새 매수를 모두 보류합니다. 키를 넣기 전에는 규칙 위원회를 고르세요.</Notice>
         </div>
@@ -377,7 +398,9 @@ function SimulationPanel({ view }: { view: SettingsView }) {
               {[...results].reverse().map((r) => (
                 <tr key={r.day}>
                   <td className={cx(TD, "num")}>
-                    {dayDots(r.day)}
+                    <Link to={`/committee?day=${r.day}`} className="text-ink no-underline hover:underline" aria-label={`${dayDots(r.day)} 심의 보기`}>
+                      {dayDots(r.day)}
+                    </Link>
                     {r.halted && <span className="ml-2 font-semibold text-danger">엔진 정지</span>}
                   </td>
                   <td className={TD}>{r.regime ?? ""}</td>
@@ -390,6 +413,9 @@ function SimulationPanel({ view }: { view: SettingsView }) {
               ))}
             </tbody>
           </table>
+          <p className="border-t border-divider px-3 py-2 text-label text-ink-muted">
+            거래일을 누르면 그날 심의를 봅니다. 체결은 <Link to="/portfolio?tab=ledger">포트폴리오 장부</Link>에 적혀 있습니다.
+          </p>
         </div>
       )}
       <ResetDialog open={resetOpen} onOpenChange={setResetOpen} view={view} onDone={() => setResults([])} />

@@ -6,7 +6,7 @@ import { Badge, Button, cx, ErrorState, Field, Notice, PageHeader, Panel, Select
 import { api, errorMessage } from "@/lib/api";
 import { dayDots, num, pct, won } from "@/lib/format";
 import { CONVICTION, DATA_SOURCE } from "@/lib/labels";
-import { notifyError, refreshAll, useBrokerKeys, useSettings, useStatus } from "@/lib/queries";
+import { notifyError, refreshAll, useSaveEngine, useBrokerKeys, useSettings, useStatus } from "@/lib/queries";
 import { useElevated } from "@/lib/stepup";
 import type { EngineSettings, RiskLimits, SettingsView } from "@/lib/types";
 import { AccountPanel } from "@/features/settings/AccountPanel";
@@ -174,24 +174,6 @@ function BrokerCard({ title, env, active, tone, configured, baseUrl, keyPrefix, 
 }
 
 // ── AI 위원회 ───────────────────────────────────────────────────────────
-
-function useSaveEngine() {
-  const elevated = useElevated();
-  const [busy, setBusy] = useState(false);
-  const save = async (patch: Partial<EngineSettings>, done: string) => {
-    setBusy(true);
-    try {
-      await elevated(() => api.put("/api/settings/engine", patch));
-      toast.success(done);
-      refreshAll();
-    } catch (e) {
-      notifyError(e);
-    } finally {
-      setBusy(false);
-    }
-  };
-  return { save, busy };
-}
 
 function AiPanel({ view }: { view: SettingsView }) {
   const { save, busy } = useSaveEngine();

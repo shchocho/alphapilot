@@ -225,7 +225,7 @@ function ChainDialog({ chainId, onClose }: { chainId: string | null; onClose: ()
           </div>
           {chain.data.decision_id && (
             <Link to={`/committee/${chain.data.decision_id}`} onClick={onClose} className="mt-2 inline-flex min-h-11 items-center gap-1 text-body-sm font-semibold text-accent hover:text-accent-hover">
-              판단 근거 보기(위원 의견·리스크 점검)
+              회의 보기
               <ArrowRight aria-hidden className="size-4" />
             </Link>
           )}
@@ -311,7 +311,7 @@ export function Passbook({ book, className }: { book: Dashboard["passbook"]; cla
         </p>
       )}
       {all.length === 0 ? (
-        <Empty title="아직 적힌 거래가 없습니다" action={<Link to="/auto">자동매매에서 시뮬레이션 시작하기</Link>}>
+        <Empty title="아직 적힌 거래가 없습니다" action={<Link to="/auto">자동매매에서 거래일 진행하기</Link>}>
           엔진을 켜고 거래일을 진행하면 매수·매도·거절한 이유가 여기에 한 줄씩 적힙니다.
         </Empty>
       ) : (

@@ -90,8 +90,9 @@ function Rail({ status }: { status: Status | undefined }) {
             <item.icon aria-hidden className="size-5 shrink-0" />
             <span className="flex-1">{item.label}</span>
             {item.to === "/auto" && (status?.pending_approvals ?? 0) > 0 && (
-              <span className="num grid h-5 min-w-5 place-items-center rounded-full bg-accent px-1 text-caption font-semibold text-on-accent" aria-label={`승인 대기 ${status?.pending_approvals}건`}>
-                {status?.pending_approvals}
+              <span className="num grid h-5 min-w-5 place-items-center rounded-full bg-accent px-1 text-caption font-semibold text-on-accent">
+                <span aria-hidden>{status?.pending_approvals}</span>
+                <span className="sr-only">승인 대기 {status?.pending_approvals}건</span>
               </span>
             )}
           </NavLink>
@@ -466,8 +467,9 @@ function TabBar({ pending }: { pending: number }) {
             <item.icon aria-hidden className="size-5" />
             {item.short}
             {item.to === "/auto" && pending > 0 && (
-              <span className="num absolute top-1 left-1/2 ml-2 grid h-5 min-w-5 place-items-center rounded-full bg-accent px-1 text-caption font-semibold text-on-accent" aria-label={`승인 대기 ${pending}건`}>
-                {pending}
+              <span className="num absolute top-1 left-1/2 ml-2 grid h-5 min-w-5 place-items-center rounded-full bg-accent px-1 text-caption font-semibold text-on-accent">
+                <span aria-hidden>{pending}</span>
+                <span className="sr-only">승인 대기 {pending}건</span>
               </span>
             )}
           </NavLink>

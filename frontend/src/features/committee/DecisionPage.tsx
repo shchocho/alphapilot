@@ -2,15 +2,14 @@
 
 import { ChevronLeft } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
-import { Badge, cx, ErrorState, Panel, SkeletonRows } from "@/components/ui";
+import { cx, ErrorState, Panel, SkeletonRows } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
-import { dayLabel, labelOf, num } from "@/lib/format";
-import { entryText, INTENT_STATUS, INTENT_TONE } from "@/lib/labels";
+import { dayLabel, num } from "@/lib/format";
 import { useDecision } from "@/lib/queries";
 import { SingleApproval } from "../auto/ApprovalCard";
 import { LedgerTable } from "../dashboard/Passbook";
 import { MeetingRoom } from "./MeetingRoom";
-import { ActionBadge, sourceLabel, TechniqueChecks } from "./parts";
+import { ActionBadge, IntentSummary, sourceLabel, TechniqueChecks } from "./parts";
 
 export default function DecisionPage() {
   const { id } = useParams();
@@ -51,23 +50,7 @@ export default function DecisionPage() {
           <div className="min-w-0 space-y-4">
             {d.intent?.status === "pending_approval" && <SingleApproval card={d.intent} showDecisionLink={false} />}
 
-            {d.intent && d.intent.status !== "pending_approval" && (
-              <section className="rounded-lg border border-divider bg-accent-subtle p-4" aria-label="이 판단으로 만든 주문 계획">
-                <p className="flex flex-wrap items-center gap-2 text-body-sm">
-                  <Badge tone={INTENT_TONE[d.intent.status] ?? "accent"}>
-                    {labelOf(INTENT_STATUS, d.intent.status)}
-                  </Badge>
-                  <span className="num font-semibold text-ink">
-                    {d.intent.side === "buy" ? "매수" : "매도"} 계획 {num(d.intent.qty)}주 · {dayLabel(d.intent.trade_date)}
-                  </span>
-                </p>
-                <p className="num mt-1 text-body-sm text-ink-secondary">
-                  {entryText(d.intent)}
-                  {d.intent.stop ? ` · 손절 ${num(d.intent.stop)}원` : ""}
-                  {d.intent.note ? ` · ${d.intent.note}` : ""}
-                </p>
-              </section>
-            )}
+            {d.intent && d.intent.status !== "pending_approval" && <IntentSummary intent={d.intent} label="이 판단으로 만든 주문 계획" detail />}
 
             {d.chain.length > 0 && (
               <Panel title="이 판단 뒤에 일어난 일" bodyClassName="">

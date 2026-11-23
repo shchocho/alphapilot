@@ -50,7 +50,7 @@ interface Props {
   card: IntentCard;
   outcome?: Outcome;
   onDecided?: (id: string, outcome: Outcome) => void;
-  /** 판단 상세 화면처럼 이미 그 판단을 보고 있는 곳에서는 "판단 근거 보기" 링크를 뺀다. */
+  /** 판단 상세 화면처럼 이미 그 판단을 보고 있는 곳에서는 "회의 보기" 링크를 뺀다. */
   showDecisionLink?: boolean;
 }
 
@@ -171,7 +171,7 @@ export function ApprovalCard({ card, outcome, onDecided, showDecisionLink = true
       )}
       {card.decision_id && showDecisionLink && (
         <Link to={`/committee/${card.decision_id}`} className={cx("mt-2 inline-flex min-h-11 items-center gap-1 text-body-sm font-semibold", outcome ? "text-ink-secondary" : "text-accent")}>
-          판단 근거 보기
+          회의 보기
           <ArrowRight aria-hidden className="size-4" />
         </Link>
       )}

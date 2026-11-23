@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
+import { Link } from "react-router-dom";
 import { Badge, Button, Delta, DisclosureIcon, ErrorState, Modal, Notice, Panel, SkeletonRows, Stat, SUMMARY } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import { dayDots, num, pct, won, wonShort } from "@/lib/format";
@@ -120,7 +121,10 @@ export function SleeveCard({ sleeve, total }: { sleeve: SleeveView; total: numbe
             {book.positions.map((p) => (
               <li key={p.code} className="num flex flex-wrap items-baseline justify-between gap-x-3 py-2 text-body-sm">
                 <span className="text-ink">
-                  {p.name} <span className="text-caption text-ink-muted">{p.code}</span>
+                  <Link to={`/stocks/${p.code}`} className="text-ink no-underline hover:underline">
+                    {p.name}
+                  </Link>{" "}
+                  <span className="text-caption text-ink-muted">{p.code}</span>
                 </span>
                 <span className="text-ink-secondary">
                   {num(p.qty)}주 · 평균 {won(p.avg)} · {won(p.value)} <Delta value={p.pnl_pct}>{pct(p.pnl_pct)}</Delta>
@@ -164,7 +168,10 @@ function SignalRow({ signal: g, paper, onOpen }: { signal: SleeveSignal; paper: 
     <li className="py-2">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <span className="mr-1 text-body-sm font-medium text-ink">
-          {g.name} <span className="num text-caption font-normal text-ink-muted">{g.code}</span>
+          <Link to={`/stocks/${g.code}`} className="text-ink no-underline hover:underline">
+            {g.name}
+          </Link>{" "}
+          <span className="num text-caption font-normal text-ink-muted">{g.code}</span>
         </span>
         <Badge tone={ACTION_TONE[g.action]}>{g.action_label}</Badge>
         {g.status === "review" && <Badge tone="warning">검토 필요</Badge>}

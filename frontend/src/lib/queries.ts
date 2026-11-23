@@ -1,10 +1,12 @@
 /** 서버 상태 조회(React Query)와 실시간 알림(SSE). */
 
 import { QueryClient, useQuery } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { useElevated } from "@/lib/stepup";
 import { api, ApiError, DEMO, errorMessage } from "./api";
 import type {
+  EngineSettings,
   Account,
   BrokerKeySources,
   AuthState, BacktestResult, BacktestRun, Committee, Dashboard, DecisionDetail, IntentCard, Portfolio, Screener, SettingsView,
@@ -119,4 +121,25 @@ export function useLiveEvents(enabled: boolean): void {
       if (timer !== undefined) window.clearTimeout(timer);
     };
   }, [enabled]);
+}
+
+/** 엔진 설정 한 묶음을 저장한다. 위험해지는 변경이면 서버가 재인증을 요구하고, 그때 코드 입력 창이 뜬다. 성공하면 true. */
+export function useSaveEngine() {
+  const elevated = useElevated();
+  const [busy, setBusy] = useState(false);
+  const save = async (patch: Partial<EngineSettings>, done: string) => {
+    setBusy(true);
+    try {
+      await elevated(() => api.put("/api/settings/engine", patch));
+      toast.success(done);
+      refreshAll();
+      return true;
+    } catch (e) {
+      notifyError(e);
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+  return { save, busy };
 }
