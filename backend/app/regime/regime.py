@@ -198,7 +198,7 @@ def compute_regime(market: Market, p: RegimeParams = DEFAULT_REGIME_PARAMS) -> l
         if math.isnan(distance):
             missing.append("지수 추세")
         else:
-            parts.append(("trend", "지수 추세", 0.25, m_score, f"50일선 이격 {distance * 100:+.1f}%"))
+            parts.append(("trend", "지수 추세", 0.25, m_score, f"코스피 50일선 이격 {distance * 100:+.1f}%"))
         parts.append(("top_risk", "천장 위험(분산일)", 0.20, _DIST_SCORE[level], f"25일 {counts[0]}개 · {_DIST_LABEL[level]}"))
         if math.isnan(above):
             missing.append("시장 폭")

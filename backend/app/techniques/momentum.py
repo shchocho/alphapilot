@@ -37,6 +37,12 @@ def index_distance(market: Market, code: str, day: date) -> float:
     return float(idx.close[j]) / ema50 - 1.0
 
 
+def index_label(market: Market, code: str) -> str:
+    """index_distance가 실제로 쓰는 지수의 한글 이름. 국면의 코스피 이격과 헷갈리지 않게 표시한다."""
+    kind = market.info[code].market if code in market.info else "KOSPI"
+    return "코스닥" if kind == "KOSDAQ" and "KOSDAQ" in market.indexes else "코스피"
+
+
 def market_m_score(distance: float) -> float:
     """CANSLIM의 M(시장 방향) 점수. 0이면 매수 금지."""
     if _nan(distance):
@@ -82,10 +88,10 @@ def canslim_daily(market: Market, code: str, i: int, p: CanslimParams) -> Techni
 
     checks = [
         Check("n_near_high", "N: 52주 고가 대비 거리", round(gap_to_high * 100, 1), f"≥ −{p.near_high * 100:.0f}%", near_high),
-        Check("n_volume", "N: 돌파 거래량(50일 평균 대비)", round(vol_ratio, 2), f"≥ {p.breakout_volume:.1f}배", volume_surge),
+        Check("n_volume", "N: 돌파 거래량(50일 평균 대비)", round(vol_ratio, 2), f"≥ {p.breakout_volume:.1f}배, 상승 마감", volume_surge),
         Check("s_udvr", "S: 상승일/하락일 거래량비(60일)", round(udvr, 2), f"≥ {p.udvr_full:.1f}", udvr >= p.udvr_full),
         Check("l_rs", "L: 상대강도 백분위", None if _nan(rs) else round(rs, 0), f"≥ {p.min_rs:.0f}", leader),
-        Check("m_market", "M: 지수의 50일선 이격", None if _nan(distance) else round(distance * 100, 1), "≥ −5% (0점이면 매수 금지)", m_score > 0),
+        Check("m_market", f"M: {index_label(market, code)} 50일선 이격", None if _nan(distance) else round(distance * 100, 1), "≥ −5% (0점이면 매수 금지)", m_score > 0),
     ]
     passed = bool(score >= p.pass_score and near_high and leader and m_score > 0)
     plan = None
@@ -168,7 +174,8 @@ def turtle(market: Market, code: str, i: int, p: TurtleParams) -> TechniqueResul
     don20, don55 = float(f["don20_hi"][i]), float(f["don55_hi"][i])
     n = float(f["atr20"][i])
     broke20 = c > don20
-    fresh = float(feat.close[i - 1]) <= float(f["don20_hi"][i - 1])
+    fresh = broke20 and float(feat.close[i - 1]) <= float(f["don20_hi"][i - 1])
+    fresh_text = "새 돌파" if fresh else "이미 돌파 중" if broke20 else "돌파 없음"
     broke55 = c > don55
     sma200 = float(f["sma200"][i])
     above200 = (not _nan(sma200)) and c > sma200
@@ -177,7 +184,7 @@ def turtle(market: Market, code: str, i: int, p: TurtleParams) -> TechniqueResul
 
     checks = [
         Check("break20", "20일 고가 돌파", round(c, 0), f"> {don20:,.0f}", broke20),
-        Check("fresh", "새로 나온 돌파(전일은 돌파 전)", "새 돌파" if fresh else "이미 돌파 중", "전일 종가 ≤ 전일의 20일 고가", fresh),
+        Check("fresh", "새로 나온 돌파(전일은 돌파 전)", fresh_text, "오늘 돌파, 전일 종가 ≤ 전일의 20일 고가", fresh),
         Check("break55", "55일 고가 돌파(강한 신호)", round(c, 0), f"> {don55:,.0f}", broke55),
         Check("above200", "200일선 위(참고)", None if _nan(sma200) else round(sma200, 0), "주가 > 200일선", above200),
     ]

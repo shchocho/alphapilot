@@ -102,6 +102,8 @@ def test_regime_is_bullish_when_index_and_breadth_are_strong():
     assert state.exposure_cap == pytest.approx(1.0)
     assert state.dist_level == "normal"
     assert not state.missing
+    trend = next(c for c in state.components if c["key"] == "trend")
+    assert "코스피" in trend["detail"]  # 종목별 M 점수(코스닥일 수 있음)와 헷갈리지 않게 지수를 밝힌다
 
 
 def test_regime_blocks_new_buys_in_a_broad_downtrend():

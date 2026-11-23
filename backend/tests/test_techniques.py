@@ -167,6 +167,25 @@ def test_canslim_blocks_buying_when_market_score_is_zero():
     assert result.plan is None
 
 
+def test_canslim_m_check_names_the_index_it_measures():
+    market = make_market({CODE: canslim_bars()})
+    m = next(c for c in momentum.canslim_daily(market, CODE, last(market), P.canslim).checks if c.key == "m_market")
+    assert "코스피" in m.label
+    market.info[CODE].market = "KOSDAQ"
+    m = next(c for c in momentum.canslim_daily(market, CODE, last(market), P.canslim).checks if c.key == "m_market")
+    assert "코스닥" in m.label
+
+
+def test_canslim_volume_check_says_it_needs_an_up_day():
+    bars = canslim_bars()
+    bars.loc[bars.index[-1], "close"] = float(bars["close"].iloc[-2]) * 0.99  # 거래량은 크지만 내린 날
+    market = make_market({CODE: bars})
+    vol = next(c for c in momentum.canslim_daily(market, CODE, last(market), P.canslim).checks if c.key == "n_volume")
+    assert vol.value >= P.canslim.breakout_volume
+    assert not vol.passed
+    assert "상승" in vol.threshold
+
+
 def test_canslim_fails_far_below_52_week_high():
     closes = np.concatenate([10_000 * 1.004 ** np.arange(250), linear(10_000 * 1.004**249, 10_000 * 1.004**249 * 0.8, 50)])
     market = make_market({CODE: make_bars(closes)})
@@ -246,7 +265,11 @@ def test_turtle_does_not_repeat_signal_on_second_day_of_breakout():
 
 def test_turtle_quiet_inside_range():
     market = make_market({CODE: flat_bars(120)})
-    assert not momentum.turtle(market, CODE, last(market), P.turtle).passed
+    result = momentum.turtle(market, CODE, last(market), P.turtle)
+    assert not result.passed
+    fresh = next(c for c in result.checks if c.key == "fresh")
+    assert not fresh.passed  # 돌파가 없으면 '새 돌파'로 표시하지 않는다
+    assert fresh.value == "돌파 없음"
 
 
 # ── 변동성 돌파 ───────────────────────────────────────────────────────────────
