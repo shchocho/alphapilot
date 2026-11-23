@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { DecisionDetail, Seat, TranscriptStep } from "@/lib/types";
-import { buildMeeting, signed, tableSides } from "./meeting";
+import { signed } from "@/lib/format";
+import { buildMeeting, tableSides } from "./meeting";
 
 const seat = (key: string, label: string, value: number, stance: Seat["stance"], abstained = false): Seat => ({
   seat: key,

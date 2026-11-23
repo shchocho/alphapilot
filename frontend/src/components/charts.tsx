@@ -5,7 +5,7 @@ import { monthTicks, niceScale, textWidth } from "@/lib/chartmath";
 import { dayDots } from "@/lib/format";
 import { cx, DisclosureIcon, SUMMARY } from "./ui";
 
-export function useWidth<T extends HTMLElement>(): [React.RefObject<T | null>, number] {
+function useWidth<T extends HTMLElement>(): [React.RefObject<T | null>, number] {
   const ref = useRef<T | null>(null);
   const [width, setWidth] = useState(0);
   useEffect(() => {

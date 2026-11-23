@@ -11,7 +11,7 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import Callable
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import func, select
@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.committee.deliberation import deliberate_entry, deliberate_holding
 from app.committee.escalation import entry_branch, holding_branch, second_opinion
-from app.committee.llm import AnthropicLlm, LlmClient, LlmError, LlmUsage
+from app.committee.llm import AnthropicLlm, LlmClient, LlmError, LlmUsage, close_llm
 from app.config import Settings
 from app.core import clock
 from app.core.models import Decision, Intent
@@ -157,7 +157,7 @@ class EngineService:
         updated = EngineSettings.model_validate({**current.model_dump(), **changed})
         if changed:
             self.kv.save_settings(updated)
-            self._log(updated.env, Event("settings", "설정 변경: " + ", ".join(sorted(changed)), payload={"changed": changed}))
+            self.log_event(updated.env, Event("settings", "설정 변경: " + ", ".join(sorted(changed)), payload={"changed": changed}))
         return updated
 
     def update_limits(self, patch: dict[str, Any]) -> tuple[RiskLimits, list[str]]:
@@ -168,7 +168,7 @@ class EngineService:
         changed = {k: v for k, v in updated.model_dump().items() if getattr(current, k) != v}
         if changed:
             self.kv.save_limits(updated)
-            self._log(self.settings().env, Event("settings", "리스크 한도 변경: " + ", ".join(sorted(changed)),
+            self.log_event(self.settings().env, Event("settings", "리스크 한도 변경: " + ", ".join(sorted(changed)),
                                                  payload={"changed": changed, "before": {k: getattr(current, k) for k in changed}}))
         return updated, loosened
 
@@ -177,7 +177,7 @@ class EngineService:
         return EngineConfig(limits=self.limits(), costs=st.cost_model(), enabled_techniques=tuple(st.enabled_techniques),
                             max_candidates=st.max_candidates)
 
-    def _holidays(self, st: EngineSettings) -> frozenset[date]:
+    def holidays(self, st: EngineSettings) -> frozenset[date]:
         out = set()
         for text in st.extra_holidays:
             with contextlib.suppress(ValueError):
@@ -186,11 +186,15 @@ class EngineService:
 
     # ── 데이터 ─────────────────────────────────────────────────────────────
 
-    def load_market(self) -> bool:
-        """캐시된 일봉으로 시장 객체를 만든다. 지수 봉이 없으면 False."""
-        codes = [s.code for s in load_universe()]
+    def load_bars(self, codes: list[str]) -> tuple[dict, dict]:
+        """캐시에서 종목 일봉과 지수 일봉(빈 것은 뺀다)을 읽는다."""
         bars = self.store.load_many(codes)
         index_bars = {c: frame for c in INDEX_CODES if not (frame := self.store.load(c)).empty}
+        return bars, index_bars
+
+    def load_market(self) -> bool:
+        """캐시된 일봉으로 시장 객체를 만든다. 지수 봉이 없으면 False."""
+        bars, index_bars = self.load_bars([s.code for s in load_universe()])
         if "KOSPI" not in index_bars or not bars:
             return False
         self.market = build_market(bars, index_bars, universe_map(), source=self.provider.name)
@@ -211,7 +215,7 @@ class EngineService:
                 summary = f"일봉 갱신: 새 봉 {len(report.updated)}종목, 변동 없음 {len(report.unchanged)}, 실패 {len(report.failed)}"
                 if report.refetched:
                     summary += f", 수정주가 재수신 {len(report.refetched)}"
-                self._log(self.settings().env, Event("data", summary, payload={"failed": report.failed, "source": self.provider.name}))
+                self.log_event(self.settings().env, Event("data", summary, payload={"failed": report.failed, "source": self.provider.name}))
                 return report
             finally:
                 self.busy = ""
@@ -226,7 +230,7 @@ class EngineService:
 
     # ── 원장 ───────────────────────────────────────────────────────────────
 
-    def _log(self, env: str, event: Event, *, day: date | None = None, cash_after: int | None = None) -> int:
+    def log_event(self, env: str, event: Event, *, day: date | None = None, cash_after: int | None = None) -> int:
         day_text = day.isoformat() if day else None
         if day_text is None and env == "sim":
             # 시뮬레이션에서 사용자가 한 조작(승인·거절·설정)은 그때의 시뮬레이션 날짜로 적는다. 읽기만 한다(쓰기 잠금을 잡지 않는다).
@@ -245,16 +249,16 @@ class EngineService:
         st, repaired = self.kv.load_settings_checked()
         if repaired:
             self.kv.save_settings(st)
-            self._log(st.env, Event("settings", f"저장된 엔진 설정 중 지금 버전에서 쓸 수 없는 값을 기본값으로 되돌렸습니다: {', '.join(repaired)}"))
+            self.log_event(st.env, Event("settings", f"저장된 엔진 설정 중 지금 버전에서 쓸 수 없는 값을 기본값으로 되돌렸습니다: {', '.join(repaired)}"))
         limits, repaired_limits = self.kv.load_limits_checked()
         if repaired_limits:
             self.kv.save_limits(limits)
-            self._log(st.env, Event("settings", f"저장된 리스크 한도 중 쓸 수 없는 값을 기본값으로 되돌렸습니다: {', '.join(repaired_limits)}"))
+            self.log_event(st.env, Event("settings", f"저장된 리스크 한도 중 쓸 수 없는 값을 기본값으로 되돌렸습니다: {', '.join(repaired_limits)}"))
         self.load_market()
         if st.state == "running" and not st.resume_check_required:
             st.resume_check_required = True
             self.kv.save_settings(st)
-            self._log(st.env, Event("engine", "재시작을 감지했습니다. 확인하기 전까지 모든 주문을 승인 대기로 돌립니다"))
+            self.log_event(st.env, Event("engine", "재시작을 감지했습니다. 확인하기 전까지 모든 주문을 승인 대기로 돌립니다"))
 
     def _set_state(self, state: str, summary: str, **changes: Any) -> EngineSettings:
         st = self.settings()
@@ -262,7 +266,7 @@ class EngineService:
         for key, value in changes.items():
             setattr(st, key, value)
         self.kv.save_settings(st)
-        self._log(st.env, Event("engine", summary, payload={"state": state}))
+        self.log_event(st.env, Event("engine", summary, payload={"state": state}))
         self.bus.publish("status")
         return st
 
@@ -275,7 +279,7 @@ class EngineService:
         st = self.settings()
         st.resume_check_required = False
         self.kv.save_settings(st)
-        self._log(st.env, Event("engine", f"재시작 점검 확인: 자동화 단계 '{AUTOMATION_LABELS[st.automation_level]}'로 돌아갑니다"))
+        self.log_event(st.env, Event("engine", f"재시작 점검 확인: 자동화 단계 '{AUTOMATION_LABELS[st.automation_level]}'로 돌아갑니다"))
         self.bus.publish("status")
         return st
 
@@ -304,7 +308,7 @@ class EngineService:
                                 source="liquidate", technique=pos.technique, reason="전량 매도 후 정지", sector=pos.sector)
                 repo.upsert_intent(s, st.env, intent)
                 created += 1
-        self._log(st.env, Event("engine", f"전량 매도 예약: {created}종목을 다음 거래일({trade_date}) 시가에 매도합니다", payload={"count": created}))
+        self.log_event(st.env, Event("engine", f"전량 매도 예약: {created}종목을 다음 거래일({trade_date}) 시가에 매도합니다", payload={"count": created}))
         return {**result, "sell_intents": created, "trade_date": trade_date.isoformat()}
 
     def _cancel_open_intents(self, env: str, note: str) -> int:
@@ -312,13 +316,13 @@ class EngineService:
         with self.sf() as s, s.begin():
             rows = repo.intents_for(s, env, statuses=("pending_approval", "approved"))
             for row in rows:
-                if row.side == "sell" and '"source": "liquidate"' in row.body:
+                if row.side == "sell" and repo.row_to_intent(row).source == "liquidate":
                     continue
                 row.status = "cancelled"
                 row.decided_at = clock.now_kst().isoformat(timespec="seconds")
                 events.append(Event("expire", f"{note}: {'매수' if row.side == 'buy' else '매도'} 계획 {row.qty}주", row.code, row.name, row.chain_id, qty=row.qty))
         for event in events:
-            self._log(env, event)
+            self.log_event(env, event)
         return len(events)
 
     # ── 환경 전환 ──────────────────────────────────────────────────────────
@@ -348,7 +352,7 @@ class EngineService:
         st.state = "stopped"
         st.automation_level = min(st.automation_level, 1)  # 환경이 바뀌면 승인 단계부터 다시 시작한다
         self.kv.save_settings(st)
-        self._log(target, Event("engine", f"환경 전환: {ENV_LABELS[previous]} → {ENV_LABELS[target]} (엔진 정지, 자동화 '모두 승인' 이하로)"))
+        self.log_event(target, Event("engine", f"환경 전환: {ENV_LABELS[previous]} → {ENV_LABELS[target]} (엔진 정지, 자동화 '모두 승인' 이하로)"))
         self.bus.publish("status")
         return st
 
@@ -368,7 +372,7 @@ class EngineService:
             summary = f"{side} {row.qty}주 {'승인' if approve else '거절'}" + (f" · {note}" if note else "")
             event = Event("approve" if approve else "reject", summary, row.code, row.name, row.chain_id, qty=row.qty)
             data = repo.intent_to_dict(row)
-        self._log(st.env, event)
+        self.log_event(st.env, event)
         self.bus.publish("status")
         return data
 
@@ -379,7 +383,7 @@ class EngineService:
             t = self.market.cal_index(day)
             if t is not None and t + 1 < len(self.market.calendar):
                 return self.market.calendar[t + 1]
-        return clock.next_trading_day(day, self._holidays(st))
+        return clock.next_trading_day(day, self.holidays(st))
 
     def sim_reset(self, start: date | None = None, initial_cash: int | None = None) -> dict[str, Any]:
         st = self.settings()
@@ -393,7 +397,7 @@ class EngineService:
         self._set_state("stopped", f"시뮬레이션 초기화: 시작 자금 {st.sim_initial_cash:,}원" + (f", 시작일 {start}" if start else ""))
         return {"start": start.isoformat() if start else None, "initial_cash": st.sim_initial_cash}
 
-    def _next_sim_day(self) -> tuple[date | None, bool]:
+    def next_sim_day(self) -> tuple[date | None, bool]:
         """(다음에 처리할 거래일, 첫 처리 여부). 처리할 날이 없으면 (None, False)."""
         assert self.market is not None
         calendar = self.market.calendar
@@ -423,7 +427,7 @@ class EngineService:
         async with self._lock:
             try:
                 for _ in range(max(1, min(days, 250))):
-                    day, first = self._next_sim_day()
+                    day, first = self.next_sim_day()
                     if day is None:
                         break
                     self.busy = f"{day} 처리 중"
@@ -434,7 +438,7 @@ class EngineService:
                     await asyncio.sleep(0)
             except Exception as exc:  # noqa: BLE001 - 어떤 오류든 기록하고 다시 올린다
                 self.last_error = f"{type(exc).__name__}: {exc}"
-                self._log("sim", Event("error", f"거래일 처리 중 오류: {self.last_error}"))
+                self.log_event("sim", Event("error", f"거래일 처리 중 오류: {self.last_error}"))
                 raise
             finally:
                 self.busy = ""
@@ -524,13 +528,13 @@ class EngineService:
             repo.save_equity(s, env, day, equity, portfolio.cash, portfolio.exposure(prices), benchmark)
             account.sim_day = day.isoformat()
         for event, cash_after in events:
-            self._log(env, event, day=day, cash_after=cash_after)
+            self.log_event(env, event, day=day, cash_after=cash_after)
 
         # 2) 장 마감 뒤 사이클
         halted = False
         cycle_summary: dict[str, Any] = {}
         if st.state == "stopped":
-            self._log(env, Event("cycle", "엔진이 정지 상태라 장후 심의를 건너뜁니다(보호 청산만 처리)"), day=day)
+            self.log_event(env, Event("cycle", "엔진이 정지 상태라 장후 심의를 건너뜁니다(보호 청산만 처리)"), day=day)
         else:
             cycle_summary, halted = await self._after_close(day, t, st, cfg)
         self.bus.publish("status")
@@ -577,7 +581,7 @@ class EngineService:
                 elif intent.status == "cancelled":
                     approval_events.append(Event("expire", note, intent.code, intent.name, intent.chain_id, qty=intent.qty))
         for event in [*cycle.events[:-1], *approval_events, cycle.events[-1]]:
-            self._log(env, event, day=day)
+            self.log_event(env, event, day=day)
 
         halted = False
         if draft.breaker.halt_engine and st.state != "stopped":
@@ -605,7 +609,7 @@ class EngineService:
             return "pending_approval", ""
         return "approved", ""
 
-    def _make_llm(self, st: EngineSettings) -> LlmClient:
+    def make_llm(self, st: EngineSettings) -> LlmClient:
         if self._llm_factory is not None:
             return self._llm_factory(st)
         return AnthropicLlm(self.config.anthropic_api_key.get_secret_value(), model=st.ai_model, effort=st.ai_effort)
@@ -617,7 +621,7 @@ class EngineService:
         if not draft.candidates and not review_targets:
             return entries, holds
         try:
-            llm = self._make_llm(st)
+            llm = self.make_llm(st)
         except LlmError as exc:
             for cand in draft.candidates:
                 entries[cand.info.code] = (Decision(cand.info.code, cand.info.name, "entry", "HOLD", "very_low", thesis="AI 판단을 받지 못해 보류합니다",
@@ -639,9 +643,7 @@ class EngineService:
                 decision, transcript = await deliberate_entry(cand.context, llm, budget, depth=st.ai_depth)
                 entries[cand.info.code] = (decision, transcript.to_dict())
         finally:
-            closer = getattr(llm, "aclose", None)
-            if closer is not None:
-                await closer()
+            await close_llm(llm)
         return entries, holds
 
     async def _branch_decisions(self, draft: CycleDraft, st: EngineSettings) -> tuple[dict[str, tuple[Decision, dict | None]], dict[str, tuple[Decision, dict | None]]]:
@@ -653,9 +655,9 @@ class EngineService:
         if not asks:
             return entries, holds
         try:
-            llm = self._make_llm(st)
+            llm = self.make_llm(st)
         except LlmError as exc:
-            self._log(st.env, Event("error", f"AI 분기 판단 {len(asks)}건을 건너뛰고 규칙 결론을 씁니다: {exc}"), day=draft.day)
+            self.log_event(st.env, Event("error", f"AI 분기 판단 {len(asks)}건을 건너뛰고 규칙 결론을 씁니다: {exc}"), day=draft.day)
             return entries, holds
         budget = BudgetGuard(self.sf, st.env, st.ai_daily_budget_usd)
         try:
@@ -665,12 +667,16 @@ class EngineService:
                 decision, transcript = await second_opinion(context, table[info.code][0], why, llm, budget)
                 table[info.code] = (decision, transcript.to_dict())
         finally:
-            closer = getattr(llm, "aclose", None)
-            if closer is not None:
-                await closer()
+            await close_llm(llm)
         return entries, holds
 
     # ── 상태 요약 ──────────────────────────────────────────────────────────
+
+    def sim_day(self) -> str | None:
+        """지금 거래 환경에서 처리한 마지막 거래일(ISO). 화면의 기준일을 정할 때 status() 전체를 부르지 않으려고 따로 둔다."""
+        st = self.settings()
+        with self.sf() as s, s.begin():
+            return repo.get_account(s, st.env, st.sim_initial_cash).sim_day
 
     def status(self) -> dict[str, Any]:
         st = self.settings()
@@ -693,7 +699,7 @@ class EngineService:
                 r = self.regimes[t]
                 regime = {"label": r.label, "score": round(r.score), "exposure_cap": round(r.exposure_cap, 3), "allow_new_buys": r.allow_new_buys, "day": r.day.isoformat()}
         budget = BudgetGuard(self.sf, st.env, st.ai_daily_budget_usd)
-        phase = clock.session_phase(now, self._holidays(st))
+        phase = clock.session_phase(now, self.holidays(st))
         return {
             "env": st.env, "env_label": ENV_LABELS[st.env], "state": st.state, "state_label": STATE_LABELS[st.state],
             "automation_level": st.automation_level, "automation_label": AUTOMATION_LABELS[st.automation_level],
@@ -725,199 +731,3 @@ class EngineService:
             return 0
         t = self.market.cal_index(date.fromisoformat(sim_day))
         return 0 if t is None else len(self.market.calendar) - 1 - t
-
-
-SCHEDULER_DONE_KEY = "scheduler_done_day"  # 일봉 갱신과 거래일 처리를 마친 날(재시작해도 같은 날 다시 하지 않는다)
-MAINTENANCE_DONE_KEY = "maintenance_done_day"
-
-
-class Scheduler:
-    """백그라운드 루프. 서버 한 대가 사람 없이 24시간 돌 때를 기준으로 짰다.
-
-    거래일 장 마감(15:45) 뒤:
-      1) 일봉을 갱신한다. 오늘 봉이 아직 없거나 갱신이 실패하면 RETRY_EVERY마다 다시 시도하고,
-         GIVE_UP_AT까지도 못 받으면 원장에 오류를 남기고 그날은 멈춘다(사람이 확인해야 한다).
-      2) 시뮬레이션이 최신 일봉을 따라가던 중이면 밀린 거래일을 처리한다. 서버가 멈춰 며칠 밀렸어도
-         MAX_CATCH_UP일까지는 차례로 따라잡는다. 과거 구간을 재생하던 중이면 자동으로 진행하지 않는다.
-      3) 하루 한 번 DB 점검(백업·정리·무결성)을 한다.
-    health()는 루프가 살아 있는지를 /api/health에 알려 준다.
-    """
-
-    REFRESH_AFTER = time(15, 45)
-    RETRY_EVERY = timedelta(minutes=15)
-    GIVE_UP_AT = time(23, 0)
-    MAX_CATCH_UP = 5
-    STALE_AFTER = timedelta(minutes=5)  # 쉬는 중 마지막 틱이 이보다 오래되면 멈춘 것으로 본다
-    BUSY_LIMIT = timedelta(minutes=60)  # 한 틱(갱신·처리)이 이보다 오래 걸리면 걸린 것으로 본다
-    STOP_GRACE = 45.0  # 끌 때 진행 중인 틱이 끝나기를 기다리는 초(docker-compose의 stop_grace_period보다 짧게)
-
-    def __init__(self, service: EngineService, *, interval: float = 60.0,
-                 maintenance: Callable[[datetime], dict[str, Any]] | None = None) -> None:
-        self._service = service
-        self._interval = interval
-        self._maintenance = maintenance
-        self._task: asyncio.Task[None] | None = None
-        self._stopping = False
-        self._wake = asyncio.Event()
-        self._retry_at: datetime | None = None
-        self._warned_day: date | None = None
-        self.tick_started: datetime | None = None
-        self.tick_finished: datetime | None = None
-
-    def start(self) -> None:
-        if self._task is None:
-            self._stopping = False
-            self._wake.clear()
-            self._task = asyncio.create_task(self._run(), name="alphapilot-scheduler")
-
-    async def stop(self, grace: float | None = None) -> None:
-        """진행 중인 틱(일봉 갱신·거래일 처리)은 끝까지 하게 두고 멈춘다. grace초 안에 안 끝나면 그때 끊는다.
-
-        거래일 처리 도중에 끊으면 체결은 반영됐는데 장후 심의·주문 계획은 없는 날이 생길 수 있어서다.
-        """
-        task = self._task
-        if task is None:
-            return
-        self._stopping = True
-        self._wake.set()
-        try:
-            await asyncio.wait_for(asyncio.shield(task), timeout=self.STOP_GRACE if grace is None else grace)
-        except TimeoutError:
-            log.warning("스케줄러가 %s초 안에 끝나지 않아 중단합니다", self.STOP_GRACE if grace is None else grace)
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
-        except asyncio.CancelledError:
-            task.cancel()
-            raise
-        finally:
-            self._task = None
-
-    def health(self, now: datetime) -> tuple[bool, str]:
-        """(정상 여부, 상태). 상태: off · starting · ok · busy · stale · stuck · dead."""
-        if self._task is None:
-            return True, "off"
-        if self._task.done():
-            return False, "dead"
-        if self.tick_started is None:
-            return True, "starting"
-        if self.tick_finished is None or self.tick_finished < self.tick_started:
-            within = now - self.tick_started <= self.BUSY_LIMIT
-            return within, "busy" if within else "stuck"
-        fresh = now - self.tick_finished <= self.STALE_AFTER
-        return fresh, "ok" if fresh else "stale"
-
-    async def _run(self) -> None:
-        while not self._stopping:
-            try:
-                await self.tick(clock.now_kst())
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:  # noqa: BLE001 - 루프는 죽지 않고 오류를 기록한다
-                log.exception("스케줄러 오류")
-                self._service.last_error = f"{type(exc).__name__}: {exc}"
-            if self._stopping:
-                break
-            with contextlib.suppress(TimeoutError):
-                await asyncio.wait_for(self._wake.wait(), timeout=self._interval)
-
-    async def tick(self, now: datetime) -> None:
-        self.tick_started = now
-        try:
-            await self._tick(now)
-        finally:
-            self.tick_finished = now
-
-    async def _tick(self, now: datetime) -> None:
-        service = self._service
-        st = service.settings()
-        today = now.date()
-        if not clock.is_trading_day(today, service._holidays(st)) or now.time() < self.REFRESH_AFTER:
-            return
-        if service.kv.get(SCHEDULER_DONE_KEY) == today.isoformat():
-            return
-        if self._retry_at is not None and now < self._retry_at:
-            return
-
-        problem = ""
-        try:
-            await service.refresh_data()
-            if service.market is None or service.market.last_day() < today:
-                problem = "오늘 일봉이 아직 올라오지 않았습니다"
-        except Exception as exc:  # noqa: BLE001 - 네트워크·공급자 오류는 다시 시도한다
-            log.warning("일봉 갱신 실패: %s", exc)
-            problem = f"일봉 갱신 실패({type(exc).__name__}: {exc})"
-
-        if problem:
-            if now.time() >= self.GIVE_UP_AT:
-                self._retry_at = None
-                service.kv.set(SCHEDULER_DONE_KEY, today.isoformat())
-                service._log(st.env, Event("error", f"{today} {problem}. 오늘 자동 처리를 멈춥니다. 데이터를 갱신한 뒤 직접 진행하세요"))
-            else:
-                self._retry_at = now + self.RETRY_EVERY
-                if self._warned_day != today:
-                    self._warned_day = today
-                    minutes = int(self.RETRY_EVERY.total_seconds() // 60)
-                    service._log(st.env, Event("data", f"{problem}. {minutes}분마다 다시 시도합니다"))
-            return
-
-        self._retry_at = None
-        service.kv.set(SCHEDULER_DONE_KEY, today.isoformat())
-        try:
-            await self._follow(service.settings())
-            await self._sleeves()
-        finally:
-            await self._maintain(now)
-
-    async def _sleeves(self) -> None:
-        """내 종목 운용: 대기 주문을 체결하고 차례가 된 바구니를 심의한다. 실패해도 엔진은 멈추지 않는다."""
-        service = self._service
-        sleeves = service.sleeves
-        if sleeves is None or sleeves.current() is None:
-            return
-        try:
-            await sleeves.run(trigger="schedule")
-        except Exception as exc:  # noqa: BLE001 - 바구니 오류가 자동매매 엔진을 막지 않게 기록만 한다
-            log.exception("바구니 심의 실패")
-            service._log(service.settings().env, Event("error", f"바구니 자동 심의 실패: {type(exc).__name__}: {exc}"))
-
-    async def _follow(self, st: EngineSettings) -> None:
-        """시뮬레이션이 최신을 따라가던 중이면 밀린 거래일을 처리한다."""
-        service = self._service
-        if st.env != "sim" or st.state == "stopped":
-            return
-        sim_day, behind = service.sim_lag()
-        if sim_day is None or behind <= 0:
-            return
-        following = behind == 1 or sim_day == service.kv.get(CAUGHT_UP_KEY)
-        if not following:
-            return  # 과거 구간 재생 중: 사람이 진행한다
-        if behind > self.MAX_CATCH_UP:
-            service._log("sim", Event("engine", f"시뮬레이션이 {behind}거래일 밀렸습니다. 자동으로는 {self.MAX_CATCH_UP}일까지만 따라잡습니다. "
-                                                "자동매매 화면에서 이어서 진행하세요"))
-            return
-        if behind > 1:
-            service._log("sim", Event("engine", f"서버가 멈춘 사이 밀린 {behind}거래일을 차례로 처리합니다"))
-        await service.advance(behind)
-
-    async def _maintain(self, now: datetime) -> None:
-        service = self._service
-        if self._maintenance is None or service.kv.get(MAINTENANCE_DONE_KEY) == now.date().isoformat():
-            return
-        service.kv.set(MAINTENANCE_DONE_KEY, now.date().isoformat())
-        env = service.settings().env
-        try:
-            report = await asyncio.to_thread(self._maintenance, now)
-        except Exception as exc:  # noqa: BLE001 - 점검 실패가 매매를 막지는 않는다. 기록만 남긴다
-            log.exception("일일 점검 실패")
-            service._log(env, Event("error", f"일일 DB 점검 실패: {type(exc).__name__}: {exc}"))
-            return
-        integrity = report.get("integrity", "ok")
-        parts = [f"백업 {report['backup']}" if report.get("backup") else "백업 안 함",
-                 f"만료 세션 {report.get('sessions', 0)}건·로그인 기록 {report.get('login_attempts', 0)}건 정리",
-                 f"무결성 {integrity}"]
-        if integrity != "ok":
-            service._log(env, Event("error", "일일 DB 점검에서 무결성 문제를 찾았습니다: " + " · ".join(parts)))
-        else:
-            service._log(env, Event("engine", "일일 DB 점검: " + " · ".join(parts)))
-        log.info("일일 점검: %s", report)

@@ -50,7 +50,6 @@ KIND_LABELS: dict[str, str] = {
     "broker": "증권사",
     "error": "오류",
 }
-MONEY_KINDS = frozenset({"fill_buy", "fill_sell", "protective"})
 
 
 def _canonical(fields: dict[str, Any]) -> str:

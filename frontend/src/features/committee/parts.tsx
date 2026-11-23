@@ -1,10 +1,10 @@
 /** 위원회 판단을 보여주는 공용 부품: 위원 의견, 기법 점검표, 최종 판단, 리스크 점검 단계. */
 
 import { Check, CircleAlert, X } from "lucide-react";
-import { Badge, DisclosureIcon, SUMMARY } from "@/components/ui";
-import { labelOf, num, pct } from "@/lib/format";
-import { ACTION, ACTION_TONE, checkValueText, CONVICTION, GATE_OUTCOME, GATE_RULE, GATE_TONE, planText, STANCE, STANCE_TONE, TECH_STATE, TECH_STATE_TONE } from "@/lib/labels";
-import type { FinalDecision, Gate, Seat, TechniqueResult } from "@/lib/types";
+import { Badge, DisclosureIcon, Notice, SUMMARY } from "@/components/ui";
+import { dayLabel, labelOf, num, pct, signed } from "@/lib/format";
+import { ACTION, ACTION_TONE, checkValueText, CONVICTION, entryText, GATE_OUTCOME, GATE_RULE, GATE_TONE, INTENT_STATUS, INTENT_TONE, planText, STANCE, STANCE_TONE, TECH_STATE, TECH_STATE_TONE } from "@/lib/labels";
+import type { FinalDecision, Gate, IntentCard, Seat, TechniqueResult } from "@/lib/types";
 
 export function ActionBadge({ action, review = false }: { action: string; review?: boolean }) {
   if (review) {
@@ -58,7 +58,7 @@ export function SeatList({ seats }: { seats: Seat[] }) {
           <div className="flex items-center justify-between gap-3">
             <span className="text-body-sm font-semibold text-ink">{seat.label}</span>
             <span className="flex items-center gap-2">
-              {!seat.abstained && <span className="num text-label text-ink-muted">{seat.value > 0 ? "+" : seat.value < 0 ? "−" : ""}{Math.abs(seat.value).toFixed(2)}</span>}
+              {!seat.abstained && <span className="num text-label text-ink-muted">{signed(seat.value)}</span>}
               <Badge tone={STANCE_TONE[seat.stance] ?? "neutral"}>{labelOf(STANCE, seat.stance)}</Badge>
             </span>
           </div>
@@ -163,7 +163,7 @@ export function FinalCard({ final }: { final: FinalDecision }) {
         </span>
       </div>
       {final.status !== "ok" && final.status_detail && (
-        <p className="rounded-md border border-warning/50 bg-warning-subtle px-3 py-2 text-body-sm text-warning">AI 판단을 쓸 수 없어 보류로 처리했습니다. 사유: {final.status_detail}</p>
+        <Notice tone="warning">AI 판단을 쓸 수 없어 보류로 처리했습니다. 사유: {final.status_detail}</Notice>
       )}
       <p className="text-h6 text-ink">{final.thesis}</p>
       {final.key_risks.length > 0 && (
@@ -189,6 +189,25 @@ export function FinalCard({ final }: { final: FinalDecision }) {
         </div>
       )}
     </div>
+  );
+}
+
+/** 승인이 끝난(또는 지난) 주문 계획 한 줄 요약. 종목 상세와 판단 상세가 같이 쓴다. */
+export function IntentSummary({ intent, label, detail = false }: { intent: IntentCard; label: string; detail?: boolean }) {
+  return (
+    <section className="rounded-lg border border-divider bg-accent-subtle p-4" aria-label={label}>
+      <p className="flex flex-wrap items-center gap-2 text-body-sm">
+        <Badge tone={INTENT_TONE[intent.status] ?? "accent"}>{labelOf(INTENT_STATUS, intent.status)}</Badge>
+        <span className="num font-semibold text-ink">
+          {intent.side === "buy" ? "매수" : "매도"} 계획 {num(intent.qty)}주 · {dayLabel(intent.trade_date)}
+        </span>
+      </p>
+      <p className="num mt-1 text-body-sm text-ink-secondary">
+        {entryText(intent)}
+        {detail && intent.stop ? ` · 손절 ${num(intent.stop)}원` : ""}
+        {detail && intent.note ? ` · ${intent.note}` : ""}
+      </p>
+    </section>
   );
 }
 

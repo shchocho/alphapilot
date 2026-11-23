@@ -78,7 +78,7 @@ def main() -> None:
         call("POST", "/api/engine/start")
         svc = app.state.service
         days = 0
-        while (day := svc._next_sim_day()[0]) is not None:
+        while (day := svc.next_sim_day()[0]) is not None:
             # 마지막 거래일은 자동 승인 없이 돌려 승인 대기 카드를 남긴다
             call("POST", "/api/engine/advance", {"days": 1, "auto_approve": day != svc.market.calendar[-1]})
             days += 1

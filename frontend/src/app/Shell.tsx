@@ -90,8 +90,9 @@ function Rail({ status }: { status: Status | undefined }) {
             <item.icon aria-hidden className="size-5 shrink-0" />
             <span className="flex-1">{item.label}</span>
             {item.to === "/auto" && (status?.pending_approvals ?? 0) > 0 && (
-              <span className="num grid h-5 min-w-5 place-items-center rounded-full bg-accent px-1 text-caption font-semibold text-on-accent" aria-label={`승인 대기 ${status?.pending_approvals}건`}>
-                {status?.pending_approvals}
+              <span className="num grid h-5 min-w-5 place-items-center rounded-full bg-accent px-1 text-caption font-semibold text-on-accent">
+                <span aria-hidden>{status?.pending_approvals}</span>
+                <span className="sr-only">승인 대기 {status?.pending_approvals}건</span>
               </span>
             )}
           </NavLink>
@@ -316,7 +317,7 @@ function EngineControl({ status }: { status: Status }) {
                 </span>
                 <span className="text-label text-ink-muted">새 주문을 멈추고 실행 전 계획을 취소합니다. 보유와 손절·익절은 유지합니다.</span>
               </Menu.Item>
-              <Menu.Separator className="my-1 h-px bg-surface-sunken" />
+              <Menu.Separator className="my-1 h-px bg-divider" />
               <Menu.Item
                 className={item}
                 onSelect={() => {
@@ -466,8 +467,9 @@ function TabBar({ pending }: { pending: number }) {
             <item.icon aria-hidden className="size-5" />
             {item.short}
             {item.to === "/auto" && pending > 0 && (
-              <span className="num absolute top-1 left-1/2 ml-2 grid h-5 min-w-5 place-items-center rounded-full bg-accent px-1 text-caption font-semibold text-on-accent" aria-label={`승인 대기 ${pending}건`}>
-                {pending}
+              <span className="num absolute top-1 left-1/2 ml-2 grid h-5 min-w-5 place-items-center rounded-full bg-accent px-1 text-caption font-semibold text-on-accent">
+                <span aria-hidden>{pending}</span>
+                <span className="sr-only">승인 대기 {pending}건</span>
               </span>
             )}
           </NavLink>

@@ -209,6 +209,11 @@ function Orders({ rows: raw }: { rows: IntentCard[] }) {
                 <td className={TDR}>{num(r.est_price)}</td>
                 <td className={cx(TD, "whitespace-nowrap")}>
                   <Badge tone={INTENT_TONE[r.status] ?? "neutral"}>{labelOf(INTENT_STATUS, r.status)}</Badge>
+                  {r.decision_id && (
+                    <Link to={`/committee/${r.decision_id}`} className="block mt-1 text-label font-semibold text-accent hover:text-accent-hover">
+                      회의 보기
+                    </Link>
+                  )}
                 </td>
               </tr>
             ))}
@@ -232,6 +237,11 @@ function Orders({ rows: raw }: { rows: IntentCard[] }) {
               {entryText(r)}
               {r.note && <> · {r.note}</>}
             </p>
+            {r.decision_id && (
+              <Link to={`/committee/${r.decision_id}`} className="mt-1 inline-flex min-h-11 items-center text-body-sm font-semibold text-accent hover:text-accent-hover">
+                회의 보기
+              </Link>
+            )}
           </li>
         ))}
       </ul>

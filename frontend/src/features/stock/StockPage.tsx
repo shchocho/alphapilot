@@ -2,15 +2,15 @@
 
 import { ArrowRight, ChevronLeft } from "lucide-react";
 import { useMemo } from "react";
-import { Link, useParams } from "react-router-dom";
-import { Badge, cx, Delta, Empty, ErrorState, Panel, SkeletonRows, Stat, TD, TDR, TH, THR } from "@/components/ui";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { cx, Delta, Empty, ErrorState, Panel, SkeletonRows, Stat, TD, TDR, TH, THR } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
-import { dayDots, dayLabel, labelOf, num, pct, wonShort, wonSigned } from "@/lib/format";
-import { DATA_SOURCE, entryText, EXIT_RULE, exitPlanText, heldText, INTENT_STATUS, INTENT_TONE } from "@/lib/labels";
+import { dayDots, dayLabel, labelOf, num, pct, signed, wonShort, wonSigned } from "@/lib/format";
+import { CONVICTION, DATA_SOURCE, EXIT_RULE, exitPlanText, heldText } from "@/lib/labels";
 import { useStock } from "@/lib/queries";
 import type { StockDetail } from "@/lib/types";
 import { SingleApproval } from "../auto/ApprovalCard";
-import { FinalCard, SeatList, TechniqueChecks } from "../committee/parts";
+import { ActionBadge, IntentSummary, SeatList, sourceLabel, TechniqueChecks } from "../committee/parts";
 import { CandleChart, type PriceLine } from "./CandleChart";
 
 export default function StockPage() {
@@ -48,10 +48,7 @@ function StockView({ s }: { s: StockDetail }) {
   return (
     <div className="space-y-4">
       <div>
-        <Link to="/discover" className="inline-flex min-h-11 items-center gap-1 text-body-sm font-semibold text-ink-secondary no-underline hover:text-ink">
-          <ChevronLeft aria-hidden className="size-4" />
-          종목 발굴
-        </Link>
+        <BackLink />
         <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
           <div className="min-w-0">
             <h1 className="text-h4 font-bold text-ink">{s.name}</h1>
@@ -158,15 +155,7 @@ function StockView({ s }: { s: StockDetail }) {
           {s.intents
             .filter((intent) => intent.status !== "pending_approval")
             .map((intent) => (
-              <section key={intent.id} className="rounded-lg border border-divider bg-accent-subtle p-4" aria-label="이 종목의 주문 계획">
-                <p className="flex flex-wrap items-center gap-2 text-body-sm">
-                  <Badge tone={INTENT_TONE[intent.status] ?? "accent"}>{labelOf(INTENT_STATUS, intent.status)}</Badge>
-                  <span className="num font-semibold text-ink">
-                    {intent.side === "buy" ? "매수" : "매도"} {num(intent.qty)}주 · {dayLabel(intent.trade_date)}
-                  </span>
-                </p>
-                <p className="num mt-1 text-body-sm text-ink-secondary">{entryText(intent)}</p>
-              </section>
+              <IntentSummary key={intent.id} intent={intent} label="이 종목의 주문 계획" />
             ))}
 
           {s.position && (
@@ -197,7 +186,7 @@ function StockView({ s }: { s: StockDetail }) {
             actions={
               s.decision && (
                 <Link to={`/committee/${s.decision.id}`} className="inline-flex min-h-11 items-center gap-1 text-body-sm font-semibold text-accent hover:text-accent-hover">
-                  판단 근거 보기
+                  회의 보기
                   <ArrowRight aria-hidden className="size-4" />
                 </Link>
               )
@@ -205,11 +194,16 @@ function StockView({ s }: { s: StockDetail }) {
           >
             {s.decision ? (
               <>
-                <p className="num mb-3 text-label text-ink-muted">{dayLabel(s.decision.as_of)} 장 마감 뒤 심의</p>
-                <FinalCard final={s.decision.final} />
+                <p className="flex flex-wrap items-center gap-2">
+                  <ActionBadge action={s.decision.final.action} review={s.decision.final.status !== "ok"} />
+                  <span className="num text-label text-ink-muted">
+                    {dayLabel(s.decision.as_of)} 장 마감 뒤 · 확신 {labelOf(CONVICTION, s.decision.final.conviction)} · {sourceLabel(s.decision.final.source)}
+                  </span>
+                </p>
+                <p className="mt-2 line-clamp-3 text-body-sm text-ink">{s.decision.final.thesis}</p>
               </>
             ) : (
-              <p className="text-body-sm text-ink-secondary">아직 이 종목을 심의한 적이 없습니다. 진입 기법의 조건을 통과하면 그날 장 마감 뒤 위원회에 올라갑니다.</p>
+              <Empty title="아직 심의한 적이 없습니다">진입 기법의 조건을 통과하면 그날 장 마감 뒤 위원회에 올라갑니다.</Empty>
             )}
           </Panel>
 
@@ -218,8 +212,7 @@ function StockView({ s }: { s: StockDetail }) {
               <>
                 위원 의견{" "}
                 <span className="num text-body-sm font-normal text-ink-muted">
-                  종합 {s.seat_blend > 0 ? "+" : s.seat_blend < 0 ? "−" : ""}
-                  {Math.abs(s.seat_blend).toFixed(2)}
+                  종합 {signed(s.seat_blend)}
                 </span>
               </>
             }
@@ -240,11 +233,31 @@ function StockView({ s }: { s: StockDetail }) {
                 <Stat label="ROE">{s.fundamentals.roe !== null ? pct(s.fundamentals.roe / 100, 1, false) : "없음"}</Stat>
               </dl>
             ) : (
-              <p className="text-body-sm text-ink-secondary">재무 자료는 키움증권 계좌를 연결한 뒤에 받아옵니다. 그 전까지 가치 의견은 기권합니다.</p>
+              <Empty title="재무 자료 없음">키움증권 계좌를 연결한 뒤에 받아옵니다. 그 전까지 가치 의견은 기권합니다.</Empty>
             )}
           </Panel>
         </div>
       </div>
     </div>
+  );
+}
+
+/** 앱 안에서 들어왔으면 온 곳으로(종목 발굴·포트폴리오·판단 상세 등), 주소로 바로 열었으면 종목 발굴로 돌아간다. */
+function BackLink() {
+  const navigate = useNavigate();
+  const inApp = useLocation().key !== "default";
+  return (
+    <Link
+      to="/discover"
+      onClick={(event) => {
+        if (!inApp || event.metaKey || event.ctrlKey || event.shiftKey) return;
+        event.preventDefault();
+        navigate(-1);
+      }}
+      className="inline-flex min-h-11 items-center gap-1 text-body-sm font-semibold text-ink-secondary no-underline hover:text-ink"
+    >
+      <ChevronLeft aria-hidden className="size-4" />
+      {inApp ? "뒤로" : "종목 발굴"}
+    </Link>
   );
 }

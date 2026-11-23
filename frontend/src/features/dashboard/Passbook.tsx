@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Button, cx, Empty, ErrorState, Modal, SkeletonRows } from "@/components/ui";
+import { Button, cx, Empty, ErrorState, Modal, SkeletonRows, TH, THR } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import { clock, dayShort, num, seqLabel } from "@/lib/format";
 import { kindTone } from "@/lib/labels";
@@ -20,7 +20,7 @@ const KIND_CLASS: Record<ReturnType<typeof kindTone>, string> = {
 };
 
 /** 매수는 돈이 나가므로 −, 매도는 들어오므로 +. 체결이 아닌 기록의 금액은 부호 없이 적는다. */
-export function amountText(row: LedgerRow): string {
+function amountText(row: LedgerRow): string {
   if (row.amount === null) return "";
   if (row.kind === "fill_buy") return `−${num(row.amount)}`;
   if (row.kind === "fill_sell" || row.kind === "protective") return `+${num(row.amount)}`;
@@ -31,7 +31,7 @@ const hasNumbers = (row: LedgerRow): boolean => row.qty !== null || row.amount !
 const isFill = (row: LedgerRow): boolean => row.kind === "fill_buy" || row.kind === "fill_sell" || row.kind === "protective";
 
 /** 내용이 적요와 같은 말로 시작하면 그 앞머리를 뗀다("장후 심의 · 신호 …" → "신호 …"). */
-export function summaryText(row: LedgerRow): string {
+function summaryText(row: LedgerRow): string {
   const prefix = `${row.kind_label} · `;
   return row.summary.startsWith(prefix) ? row.summary.slice(prefix.length) : row.summary;
 }
@@ -112,14 +112,14 @@ export function LedgerTable({ rows, tearAfter, freshAfter, followChains = true, 
           <col className="w-28" />
         </colgroup>
         <thead>
-          <tr className="text-label text-ink-muted">
+          <tr>
             {["번호", "날짜", "적요", "종목 · 내용"].map((h) => (
-              <th key={h} scope="col" className="border-b border-divider px-3 py-2 text-left font-semibold">
+              <th key={h} scope="col" className={TH}>
                 {h}
               </th>
             ))}
             {["수량", "금액", "현금 잔액"].map((h) => (
-              <th key={h} scope="col" className="border-b border-divider px-3 py-2 text-right font-semibold">
+              <th key={h} scope="col" className={THR}>
                 {h}
               </th>
             ))}
@@ -216,7 +216,7 @@ function ChainDialog({ chainId, onClose }: { chainId: string | null; onClose: ()
       ) : chain.isError ? (
         <ErrorState message={errorMessage(chain.error)} onRetry={() => void chain.refetch()} />
       ) : chain.data.rows.length === 0 ? (
-        <p className="text-body-sm text-ink-secondary">이 번호로 묶인 다른 기록이 없습니다.</p>
+        <Empty title="이 번호로 묶인 다른 기록이 없습니다" />
       ) : (
         <>
           {/* 대화상자 안쪽 여백(p-6)만큼 넓혀 줄 구분선이 가장자리까지 닿게 한다 */}
@@ -225,7 +225,7 @@ function ChainDialog({ chainId, onClose }: { chainId: string | null; onClose: ()
           </div>
           {chain.data.decision_id && (
             <Link to={`/committee/${chain.data.decision_id}`} onClick={onClose} className="mt-2 inline-flex min-h-11 items-center gap-1 text-body-sm font-semibold text-accent hover:text-accent-hover">
-              판단 근거 보기(위원 의견·리스크 점검)
+              회의 보기
               <ArrowRight aria-hidden className="size-4" />
             </Link>
           )}
@@ -311,7 +311,7 @@ export function Passbook({ book, className }: { book: Dashboard["passbook"]; cla
         </p>
       )}
       {all.length === 0 ? (
-        <Empty title="아직 적힌 거래가 없습니다" action={<Link to="/auto">자동매매에서 시뮬레이션 시작하기</Link>}>
+        <Empty title="아직 적힌 거래가 없습니다" action={<Link to="/auto">자동매매에서 거래일 진행하기</Link>}>
           엔진을 켜고 거래일을 진행하면 매수·매도·거절한 이유가 여기에 한 줄씩 적힙니다.
         </Empty>
       ) : (

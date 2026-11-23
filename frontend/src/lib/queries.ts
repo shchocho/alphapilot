@@ -1,10 +1,14 @@
 /** 서버 상태 조회(React Query)와 실시간 알림(SSE). */
 
 import { QueryClient, useQuery } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { useElevated } from "@/lib/stepup";
 import { api, ApiError, DEMO, errorMessage } from "./api";
 import type {
+  EngineSettings,
+  Account,
+  BrokerKeySources,
   AuthState, BacktestResult, BacktestRun, Committee, Dashboard, DecisionDetail, IntentCard, Portfolio, Screener, SettingsView,
   Status, StockDetail,
 } from "./types";
@@ -71,6 +75,10 @@ export interface SessionsView {
   sessions: { created_at: string; last_seen: string; ip: string; user_agent: string }[];
   audit: { ts: string; actor: string; action: string; detail: Record<string, unknown>; ip: string }[];
 }
+export const useAccount = () => useQuery({ queryKey: ["account"], queryFn: () => api.get<Account>("/api/auth/account") });
+
+export const useBrokerKeys = () => useQuery({ queryKey: ["broker-keys"], queryFn: () => api.get<BrokerKeySources>("/api/settings/broker/keys") });
+
 export const useSessions = () => useQuery({ queryKey: ["sessions"], queryFn: () => api.get<SessionsView>("/api/auth/sessions") });
 
 /** 계좌·장부에 영향을 주는 동작 뒤에 관련 화면을 모두 새로 읽는다. */
@@ -113,4 +121,25 @@ export function useLiveEvents(enabled: boolean): void {
       if (timer !== undefined) window.clearTimeout(timer);
     };
   }, [enabled]);
+}
+
+/** 엔진 설정 한 묶음을 저장한다. 위험해지는 변경이면 서버가 재인증을 요구하고, 그때 코드 입력 창이 뜬다. 성공하면 true. */
+export function useSaveEngine() {
+  const elevated = useElevated();
+  const [busy, setBusy] = useState(false);
+  const save = async (patch: Partial<EngineSettings>, done: string) => {
+    setBusy(true);
+    try {
+      await elevated(() => api.put("/api/settings/engine", patch));
+      toast.success(done);
+      refreshAll();
+      return true;
+    } catch (e) {
+      notifyError(e);
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+  return { save, busy };
 }

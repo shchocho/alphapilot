@@ -9,19 +9,41 @@ import json
 import logging
 import uuid
 from collections.abc import AsyncIterator
-from datetime import date
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, FastAPI, Query, Request, Response
+from fastapi import Path as FastApiPath
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import SecretStr, ValidationError
 from sqlalchemy import text
 from sqlalchemy.orm import Session, sessionmaker
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api import views
+from app.api.schemas import (
+    DAY,
+    RECORD_ID,
+    STOCK_CODE,
+    AdvanceBody,
+    BacktestBody,
+    BrokerKeysBody,
+    BrokerTestBody,
+    CodeBody,
+    ConfirmBody,
+    DecideBody,
+    EnvBody,
+    LoginBody,
+    PasswordBody,
+    PlanBody,
+    PreviewBody,
+    RestoreBody,
+    SeenBody,
+    SetupBody,
+    SimResetBody,
+    SleeveRunBody,
+)
 from app.api.security import (
     CSRF_HEADER,
     HSTS,
@@ -40,10 +62,11 @@ from app.broker.kiwoom.errors import KiwoomError
 from app.config import Settings, get_settings
 from app.core.clock import now_kst
 from app.engine.core import EngineConfig
-from app.engine.service import EngineError, EngineService, Scheduler
+from app.engine.scheduler import Scheduler
+from app.engine.service import EngineError, EngineService
 from app.journal.ledger import row_to_dict
 from app.risk.limits import RiskLimits
-from app.sleeves.config import CODE_PATTERN, SLEEVE_ID_PATTERN, PlanConfig
+from app.sleeves.config import CODE_PATTERN, SLEEVE_ID_PATTERN
 from app.sleeves.service import SleeveService
 from app.store.db import BacktestRow, make_engine, make_session_factory
 from app.store.lock import EngineLock
@@ -51,83 +74,7 @@ from app.store.maintenance import MaintenancePlan, run_daily
 from app.techniques.registry import ENTRY_KEYS
 
 log = logging.getLogger("alphapilot")
-STOCK_CODE = r"^\d{6}$"
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
-
-
-# ── 요청 본문 ─────────────────────────────────────────────────────────────────
-
-class SetupBody(BaseModel):
-    password: str = Field(min_length=1, max_length=256)
-    setup_token: str = Field("", max_length=256)
-
-
-class CodeBody(BaseModel):
-    code: str = Field(min_length=6, max_length=8)
-
-
-class LoginBody(BaseModel):
-    password: str = Field(min_length=1, max_length=256)
-    code: str = Field(min_length=6, max_length=8)
-
-
-class DecideBody(BaseModel):
-    approve: bool
-    note: str = Field("", max_length=200)
-
-
-class AdvanceBody(BaseModel):
-    days: int = Field(1, ge=1, le=250)
-    auto_approve: bool = False
-
-
-class SeenBody(BaseModel):
-    seq: int = Field(ge=0)
-
-
-class EnvBody(BaseModel):
-    env: Literal["sim", "mock", "live"]
-    confirm: str = Field("", max_length=64)
-
-
-class BrokerTestBody(BaseModel):
-    env: Literal["mock", "live"]
-
-
-class SimResetBody(BaseModel):
-    start: date | None = None
-    initial_cash: int | None = Field(None, ge=1_000_000, le=100_000_000_000)
-
-
-class ConfirmBody(BaseModel):
-    confirm: str = Field("", max_length=64)
-
-
-class PlanBody(BaseModel):
-    config: PlanConfig
-    note: str = Field("", max_length=200)
-
-
-class RestoreBody(BaseModel):
-    note: str = Field("", max_length=200)
-
-
-class SleeveRunBody(BaseModel):
-    force: bool = False
-    sleeve_ids: list[str] | None = Field(None, max_length=6)
-
-
-class PreviewBody(BaseModel):
-    config: PlanConfig | None = None
-    start: date
-
-
-class BacktestBody(BaseModel):
-    start: date | None = None
-    end: date | None = None
-    initial_cash: int = Field(30_000_000, ge=1_000_000, le=100_000_000_000)
-    techniques: list[str] = Field(default_factory=lambda: list(ENTRY_KEYS))
-    max_candidates: int = Field(8, ge=1, le=30)
 
 
 # 화면 파일의 콘텐츠 형식. 운영체제 설정(mimetypes)에 기대지 않는다: 윈도우는 .js를 text/plain으로 알려주기도 해서
@@ -185,6 +132,17 @@ def create_app(
     svc = service or EngineService(config, factory)
     sleeves: SleeveService = svc.sleeves or SleeveService(svc)
     auth = Auth(config, factory)
+    env_keys = {env: config.kiwoom_keys(env) for env in ("mock", "live")}  # .env 값. DB 키를 지우면 이것으로 돌아간다
+
+    def apply_broker_keys() -> None:
+        """DB에 저장한 증권사 키가 있으면 .env 값 대신 쓴다. 키를 읽는 곳은 모두 config를 보므로 여기서 바꿔 둔다."""
+        stored = auth.broker_keys()
+        for env in ("mock", "live"):
+            app_key, secret = stored.get(env, env_keys[env])
+            setattr(config, f"kiwoom_{env}_app_key", SecretStr(app_key))
+            setattr(config, f"kiwoom_{env}_secret_key", SecretStr(secret))
+
+    apply_broker_keys()
     plan = MaintenancePlan(backup_dir=config.backup_dir, backup_keep=config.backup_keep, idle_timeout=IDLE_TIMEOUT)
     scheduler = Scheduler(svc, maintenance=(lambda now: run_daily(db_engine, factory, plan, now)) if db_engine is not None else None)
     engine_lock = EngineLock(config.lock_path)
@@ -280,18 +238,17 @@ def create_app(
 
     @public.post("/auth/setup")
     def auth_setup(body: SetupBody, request: Request) -> dict[str, str]:
-        return auth.begin_setup(body.password, body.setup_token, client_ip(request))
+        return auth.begin_setup(body.username, body.password, body.setup_token, client_ip(request))
 
     @public.post("/auth/setup/confirm")
-    def auth_setup_confirm(body: CodeBody, request: Request) -> dict[str, bool]:
-        auth.confirm_setup(body.code, client_ip(request))
-        return {"ok": True}
+    def auth_setup_confirm(body: CodeBody, request: Request) -> dict[str, Any]:
+        return {"ok": True, "recovery_codes": auth.confirm_setup(body.code, client_ip(request))}
 
     @public.post("/auth/login")
     def auth_login(body: LoginBody, request: Request, response: Response) -> dict[str, Any]:
-        token, session = auth.login(body.password, body.code, client_ip(request), request.headers.get("user-agent", ""))
+        token, session = auth.login(body.username, body.password, body.code, client_ip(request), request.headers.get("user-agent", ""))
         response.set_cookie(SESSION_COOKIE, token, httponly=True, secure=config.is_prod, samesite="strict", max_age=7 * 24 * 3600, path="/")
-        return {"ok": True, "csrf": session.csrf}
+        return {"ok": True, "csrf": session.csrf, "recovery": session.elevated}
 
     @public.post("/auth/logout")
     def auth_logout(request: Request, response: Response) -> dict[str, bool]:
@@ -311,6 +268,27 @@ def create_app(
     def auth_logout_all(_: Elevated, response: Response) -> dict[str, int]:
         response.delete_cookie(SESSION_COOKIE, path="/")
         return {"closed": auth.logout_all()}
+
+    @api.get("/auth/account")
+    def auth_account() -> dict[str, Any]:
+        return auth.account()
+
+    @api.post("/auth/password")
+    def auth_password(body: PasswordBody, session: Elevated, request: Request) -> dict[str, int]:
+        return {"closed": auth.change_password(session, body.current, body.new, client_ip(request))}
+
+    @api.post("/auth/recovery-codes")
+    def auth_recovery_codes(_: Elevated, request: Request) -> dict[str, list[str]]:
+        return {"recovery_codes": auth.new_recovery_codes(client_ip(request))}
+
+    @api.post("/auth/totp/reset")
+    def auth_totp_reset(_: Elevated) -> dict[str, str]:
+        return auth.begin_totp_reset()
+
+    @api.post("/auth/totp/confirm")
+    def auth_totp_confirm(body: CodeBody, _: Elevated, request: Request) -> dict[str, bool]:
+        auth.confirm_totp_reset(body.code, client_ip(request))
+        return {"ok": True}
 
     @api.get("/auth/sessions")
     def auth_sessions() -> dict[str, Any]:
@@ -340,7 +318,7 @@ def create_app(
         return {"seen_seq": seq}
 
     @api.get("/ledger/chain/{chain_id}")
-    def ledger_chain(chain_id: Annotated[str, Path_(r"^[0-9A-Za-z\-]{3,40}$")]) -> dict[str, Any]:
+    def ledger_chain(chain_id: Annotated[str, Path_(RECORD_ID)]) -> dict[str, Any]:
         return views.chain(svc, chain_id)
 
     @api.get("/ledger/verify")
@@ -367,11 +345,11 @@ def create_app(
         return views.stock_detail(svc, code)
 
     @api.get("/committee")
-    def committee(day: Annotated[str | None, Query(pattern=r"^\d{4}-\d{2}-\d{2}$")] = None) -> dict[str, Any]:
+    def committee(day: Annotated[str | None, Query(pattern=DAY)] = None) -> dict[str, Any]:
         return views.committee_sessions(svc, day)
 
     @api.get("/committee/{decision_id}")
-    def committee_decision(decision_id: Annotated[str, Path_(r"^[0-9A-Za-z\-]{3,40}$")]) -> dict[str, Any]:
+    def committee_decision(decision_id: Annotated[str, Path_(RECORD_ID)]) -> dict[str, Any]:
         return views.decision_detail(svc, decision_id)
 
     @api.get("/intents/pending")
@@ -379,7 +357,7 @@ def create_app(
         return {"cards": views.pending_cards(svc)}
 
     @api.post("/intents/{intent_id}/decide")
-    def intent_decide(intent_id: Annotated[str, Path_(r"^[0-9A-Za-z\-]{3,40}$")], body: DecideBody, request: Request) -> dict[str, Any]:
+    def intent_decide(intent_id: Annotated[str, Path_(RECORD_ID)], body: DecideBody, request: Request) -> dict[str, Any]:
         data = svc.decide_intent(intent_id, body.approve, body.note)
         auth.audit("intent_approved" if body.approve else "intent_rejected", {"intent": intent_id}, client_ip(request))
         return data
@@ -466,12 +444,30 @@ def create_app(
         auth.audit("env_switch", {"env": st.env}, client_ip(request))
         return {"env": st.env}
 
+    @api.get("/settings/broker/keys")
+    def broker_keys_source() -> dict[str, str | None]:
+        """키가 어디서 왔는지만 알린다(db | env | None). 키 값은 절대 내려보내지 않는다."""
+        stored = auth.broker_keys()
+        return {env: "db" if env in stored else ("env" if all(env_keys[env]) else None) for env in ("mock", "live")}
+
+    @api.put("/settings/broker/keys")
+    def broker_keys_save(body: BrokerKeysBody, _: Elevated, request: Request) -> dict[str, bool]:
+        auth.save_broker_keys(body.env, body.app_key.strip(), body.secret_key.strip(), client_ip(request))
+        apply_broker_keys()
+        return {"ok": True}
+
+    @api.delete("/settings/broker/keys/{env}")
+    def broker_keys_delete(env: Literal["mock", "live"], _: Elevated, request: Request) -> dict[str, bool]:
+        auth.delete_broker_keys(env, client_ip(request))
+        apply_broker_keys()
+        return {"ok": True}
+
     @api.post("/settings/broker/test")
     async def broker_test(body: BrokerTestBody, request: Request) -> dict[str, Any]:
         """키움 연결 테스트: 토큰 발급 + 잔고 조회(읽기 전용). 키 값은 응답에 넣지 않는다."""
         if not config.has_kiwoom_keys(body.env):
             prefix = "KIWOOM_MOCK" if body.env == "mock" else "KIWOOM_LIVE"
-            return {"ok": False, "message": f"서버 환경변수 {prefix}_APP_KEY, {prefix}_SECRET_KEY가 설정되지 않았습니다"}
+            return {"ok": False, "message": f"키가 없습니다. 설정 화면에서 넣거나 서버 환경변수 {prefix}_APP_KEY, {prefix}_SECRET_KEY를 설정하세요"}
         client = KiwoomClient(body.env, *config.kiwoom_keys(body.env))
         try:
             token = await client.token()
@@ -483,6 +479,7 @@ def create_app(
             auth.audit("broker_test_failed", {"env": body.env, "code": exc.code}, client_ip(request))
             return {"ok": False, "code": exc.code, "message": str(exc), "hint": exc.hint}
         except Exception as exc:  # noqa: BLE001 - 네트워크 오류 등
+            log.warning("키움 연결 확인 실패(%s): %s", body.env, type(exc).__name__)  # 메시지에 키가 섞일 수 있어 종류만 남긴다
             return {"ok": False, "message": f"연결하지 못했습니다({type(exc).__name__})"}
         finally:
             await client.aclose()
@@ -638,7 +635,5 @@ def create_app(
 
 
 def Path_(pattern: str):  # noqa: N802 - FastAPI Path에 정규식만 붙이는 짧은 도우미
-    from fastapi import Path as FastApiPath
-
     return FastApiPath(pattern=pattern)
 

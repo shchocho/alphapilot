@@ -38,10 +38,23 @@ def _v2_sleeves(conn: Connection) -> None:
     Base.metadata.create_all(conn, tables=[Base.metadata.tables[name] for name in SLEEVE_TABLES])
 
 
+def _v3_login_id(conn: Connection) -> None:
+    # 기존 관리자는 아이디 'admin'으로 들어온다. broker_keys 표는 migrate() 끝의 create_all이 만든다.
+    have = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(users)")}
+    for column in ("username VARCHAR(32) NOT NULL DEFAULT 'admin'", "totp_pending_enc TEXT", "recovery_codes TEXT NOT NULL DEFAULT '[]'"):
+        if column.split()[0] not in have:  # 버전 표시 없이 새 모양으로 만든 DB도 받아 준다
+            conn.exec_driver_sql(f"ALTER TABLE users ADD COLUMN {column}")
+
+
 # v1: 2026-11-17 기준의 표 전체(버전 관리를 넣기 전에 만든 DB는 모두 이 모양이다).
 # v2: 2026-11-21 내 종목 운용(바구니) 표.
-MIGRATIONS: tuple[Migration, ...] = ((2, "내 종목 운용(바구니) 표", _v2_sleeves),)
-LATEST = 2
+# v3: 2026-11-22 로그인 아이디·복구 코드(브랜치에서는 v2였다. 두 작업을 합치며 번호를 뒤로 옮겼고, 적용 함수는
+#     이미 있는 열을 건너뛰므로 그 브랜치로 만든 DB도 그대로 올라온다).
+MIGRATIONS: tuple[Migration, ...] = (
+    (2, "내 종목 운용(바구니) 표", _v2_sleeves),
+    (3, "로그인 아이디·복구 코드·인증 앱 재연결", _v3_login_id),
+)
+LATEST = 3
 
 
 class SchemaError(RuntimeError):

@@ -2,7 +2,7 @@
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { Button, cx, Empty, ErrorState, PageHeader, Panel, Select, SkeletonRows } from "@/components/ui";
+import { Button, cx, Empty, ErrorState, PageHeader, Panel, Select, SkeletonRows, TH } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
 import { dayLabel, labelOf, num, pct } from "@/lib/format";
 import { CONVICTION } from "@/lib/labels";
@@ -91,9 +91,9 @@ function DecisionList({ decisions }: { decisions: DecisionBrief[] }) {
       <div className="hidden overflow-x-auto lg:block">
         <table className="w-full">
           <thead>
-            <tr className="text-label text-ink-muted">
+            <tr>
               {["종목", "판단", "요지", "위원 의견", "리스크 점검"].map((h) => (
-                <th key={h} scope="col" className="border-b border-divider px-3 py-2 text-left font-semibold whitespace-nowrap">
+                <th key={h} scope="col" className={TH}>
                   {h}
                 </th>
               ))}

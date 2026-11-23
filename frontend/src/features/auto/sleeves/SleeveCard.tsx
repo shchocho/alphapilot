@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
+import { Link } from "react-router-dom";
 import { Badge, Button, Delta, DisclosureIcon, ErrorState, Modal, Notice, Panel, SkeletonRows, Stat, SUMMARY } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
-import { dayDots, num, pct, won, wonShort } from "@/lib/format";
+import { dayDots, num, pct, signed, won, wonShort } from "@/lib/format";
 import { notifyError } from "@/lib/queries";
-import { ACTION_TONE, refreshSleeves, useSignal } from "./data";
+import { ACTION_TONE, ACTION_WORD, refreshSleeves, useSignal } from "./data";
 import type { SleeveSignal, SleeveView, TranscriptStep } from "./types";
 
 export function SleeveCard({ sleeve, total }: { sleeve: SleeveView; total: number }) {
@@ -120,7 +121,10 @@ export function SleeveCard({ sleeve, total }: { sleeve: SleeveView; total: numbe
             {book.positions.map((p) => (
               <li key={p.code} className="num flex flex-wrap items-baseline justify-between gap-x-3 py-2 text-body-sm">
                 <span className="text-ink">
-                  {p.name} <span className="text-caption text-ink-muted">{p.code}</span>
+                  <Link to={`/stocks/${p.code}`} className="text-ink no-underline hover:underline">
+                    {p.name}
+                  </Link>{" "}
+                  <span className="text-caption text-ink-muted">{p.code}</span>
                 </span>
                 <span className="text-ink-secondary">
                   {num(p.qty)}주 · 평균 {won(p.avg)} · {won(p.value)} <Delta value={p.pnl_pct}>{pct(p.pnl_pct)}</Delta>
@@ -164,7 +168,10 @@ function SignalRow({ signal: g, paper, onOpen }: { signal: SleeveSignal; paper: 
     <li className="py-2">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <span className="mr-1 text-body-sm font-medium text-ink">
-          {g.name} <span className="num text-caption font-normal text-ink-muted">{g.code}</span>
+          <Link to={`/stocks/${g.code}`} className="text-ink no-underline hover:underline">
+            {g.name}
+          </Link>{" "}
+          <span className="num text-caption font-normal text-ink-muted">{g.code}</span>
         </span>
         <Badge tone={ACTION_TONE[g.action]}>{g.action_label}</Badge>
         {g.status === "review" && <Badge tone="warning">검토 필요</Badge>}
@@ -182,11 +189,6 @@ function SignalRow({ signal: g, paper, onOpen }: { signal: SleeveSignal; paper: 
   );
 }
 
-function signed(x: number): string {
-  return `${x >= 0 ? "+" : "−"}${Math.abs(x).toFixed(2)}`;
-}
-
-const ACTION_WORD: Record<string, string> = { BUY_MORE: "더 모으기", BUY: "모으기", WAIT: "쉬기", TRIM: "줄이기", SELL: "팔기" };
 const STANCE_WORD: Record<string, string> = { bullish: "긍정", bearish: "부정", neutral: "중립", abstain: "기권" };
 
 function SignalDialog({ id, onClose }: { id: string | null; onClose: () => void }) {

@@ -3,7 +3,7 @@
  * 화면(MeetingRoom)이 자리와 발언을 그릴 때 쓴다. 서버 응답을 바꾸지 않고 있는 값만 다시 묶는다.
  */
 
-import { labelOf, num } from "@/lib/format";
+import { labelOf, num, signed } from "@/lib/format";
 import { ACTION, STANCE } from "@/lib/labels";
 import type { DecisionDetail, Seat, TranscriptStep } from "@/lib/types";
 
@@ -36,12 +36,6 @@ export interface Meeting {
 const SPEAKER: Record<string, string> = { bull: "bull", bull_rebuttal: "bull", bear: "bear", bear_rebuttal: "bear", risk: "risk", branch: "branch" };
 const SPEAKER_NAME: Record<string, string> = { bull: "강세 연구원", bear: "약세 연구원", risk: "리스크 검토자", branch: "분기 판단" };
 const SEVERITY: Record<string, string> = { low: "낮음", medium: "보통", high: "높음" };
-
-/** 의견 값(−1~+1)을 부호와 함께. 음수는 진짜 빼기 기호(−)로 적는다. */
-export function signed(value: number): string {
-  const text = Math.abs(value).toFixed(2);
-  return value > 0 ? `+${text}` : value < 0 ? `−${text}` : text;
-}
 
 function analystMark(seat: Seat): string {
   return seat.abstained ? labelOf(STANCE, "abstain") : `${labelOf(STANCE, seat.stance)} ${signed(seat.value)}`;

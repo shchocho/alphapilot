@@ -7,11 +7,11 @@
 import { ChevronLeft, ChevronRight, ShieldCheck, UserRound, UserRoundCheck, UserRoundPen, UserRoundSearch } from "lucide-react";
 import { type KeyboardEvent, useMemo, useRef, useState } from "react";
 import { Badge, Button, cx, Notice, Panel } from "@/components/ui";
-import { labelOf, num } from "@/lib/format";
-import { CONVICTION, STANCE, STANCE_TONE } from "@/lib/labels";
+import { labelOf, num, signed } from "@/lib/format";
+import { ACTION, CONVICTION, STANCE, STANCE_TONE } from "@/lib/labels";
 import type { DecisionDetail, TranscriptStep } from "@/lib/types";
 import { votesText } from "../auto/ApprovalCard";
-import { type Attendee, buildMeeting, signed, tableSides } from "./meeting";
+import { type Attendee, buildMeeting, tableSides } from "./meeting";
 import { ActionBadge, FinalCard, GateSteps, OpinionBar, SeatEvidence, sourceLabel } from "./parts";
 
 // ── AI 발언 내용 ────────────────────────────────────────────────────────
@@ -35,9 +35,7 @@ const FIELD: Record<string, string> = {
 };
 const VALUE: Record<string, string> = {
   ...CONVICTION,
-  BUY: "매수",
-  SELL: "매도",
-  HOLD: "보류",
+  ...ACTION,
   full: "계획 수량 그대로",
   three_quarters: "계획의 75%",
   half: "계획의 절반",

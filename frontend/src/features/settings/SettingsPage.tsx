@@ -1,4 +1,4 @@
-/** 설정: 거래 환경(시뮬레이션·모의투자·실전), AI 위원회, 리스크 한도, 비용 가정, 데이터, 보안. */
+/** 설정: 거래 환경(시뮬레이션·모의투자·실전)과 증권사 키, AI 위원회, 리스크 한도, 비용 가정, 데이터, 계정, 보안. */
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { toast } from "sonner";
@@ -6,10 +6,12 @@ import { Badge, Button, cx, ErrorState, Field, Notice, PageHeader, Panel, Select
 import { api, errorMessage } from "@/lib/api";
 import { dayDots, num, pct, won } from "@/lib/format";
 import { CONVICTION, DATA_SOURCE } from "@/lib/labels";
-import { notifyError, refreshAll, useSessions, useSettings, useStatus } from "@/lib/queries";
+import { notifyError, refreshAll, useSaveEngine, useBrokerKeys, useSettings, useStatus } from "@/lib/queries";
 import { useElevated } from "@/lib/stepup";
 import type { EngineSettings, RiskLimits, SettingsView } from "@/lib/types";
-import { useAuth } from "@/app/AuthGate";
+import { AccountPanel } from "@/features/settings/AccountPanel";
+import { BrokerKeyForm, BrokerKeyNote } from "@/features/settings/BrokerKeyForm";
+import { SecurityPanel } from "@/features/settings/SecurityPanel";
 
 export default function SettingsPage() {
   const settings = useSettings();
@@ -29,6 +31,8 @@ export default function SettingsPage() {
           </div>
         </div>
         <LimitsPanel limits={view.limits} />
+        {/* 계정·보안·키 입력은 공개 데모 빌드에서 빈 부품으로 바뀐다(vite.config.ts, CLAUDE.md 배포 안전 기준) */}
+        <AccountPanel />
         <SecurityPanel view={view} />
       </div>
     </div>
@@ -95,9 +99,8 @@ function EnvPanel({ view }: { view: SettingsView }) {
           </Notice>
         </div>
       )}
-      <p className="mt-3 text-label text-ink-muted">
-        키움 앱키와 시크릿키는 화면에서 입력받지 않습니다. 서버의 .env 파일에만 두고, 키움 개발자 사이트에 이 서버의 고정 IP를 등록해야 합니다. 자세한 순서는 docs/kiwoom-setup.md에 있습니다.
-      </p>
+      {/* 키 넣는 안내는 키 입력칸과 함께 다닌다. 공개 데모 빌드에서는 둘 다 빠진다(BrokerKeyForm.demo.tsx) */}
+      <BrokerKeyNote />
     </Panel>
   );
 }
@@ -122,6 +125,7 @@ function EnvCard({ title, active, tone, lines, children }: { title: string; acti
 function BrokerCard({ title, env, active, tone, configured, baseUrl, keyPrefix, lines }: { title: string; env: "mock" | "live"; active: boolean; tone: Tone; configured: boolean; baseUrl: string; keyPrefix: string; lines: string[] }) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<TestResult | null>(null);
+  const source = useBrokerKeys().data?.[env] ?? null;
 
   const test = async () => {
     setBusy(true);
@@ -139,13 +143,14 @@ function BrokerCard({ title, env, active, tone, configured, baseUrl, keyPrefix, 
     <EnvCard title={title} active={active} tone={tone} lines={lines}>
       <div className="w-full space-y-2">
         <p className="num text-label text-ink-muted">
-          {configured ? <Badge tone="success">키 등록됨</Badge> : <Badge tone="neutral">키 없음</Badge>} <span className="break-all">{baseUrl}</span>
+          {configured ? <Badge tone="success">{source === "db" ? "키 등록됨(화면에서 넣음)" : "키 등록됨(.env)"}</Badge> : <Badge tone="neutral">키 없음</Badge>} <span className="break-all">{baseUrl}</span>
         </p>
         {!configured && (
           <p className="text-label text-ink-muted">
-            서버 .env에 {keyPrefix}_APP_KEY와 {keyPrefix}_SECRET_KEY를 넣고 서버를 다시 시작하세요.
+            아래에서 키를 넣거나, 서버 .env에 {keyPrefix}_APP_KEY와 {keyPrefix}_SECRET_KEY를 넣고 서버를 다시 시작하세요.
           </p>
         )}
+        <BrokerKeyForm env={env} stored={source === "db"} onSaved={() => setResult(null)} />
         <Button size="sm" busy={busy} disabled={!configured} onClick={() => void test()}>
           연결 확인
         </Button>
@@ -169,24 +174,6 @@ function BrokerCard({ title, env, active, tone, configured, baseUrl, keyPrefix, 
 }
 
 // ── AI 위원회 ───────────────────────────────────────────────────────────
-
-function useSaveEngine() {
-  const elevated = useElevated();
-  const [busy, setBusy] = useState(false);
-  const save = async (patch: Partial<EngineSettings>, done: string) => {
-    setBusy(true);
-    try {
-      await elevated(() => api.put("/api/settings/engine", patch));
-      toast.success(done);
-      refreshAll();
-    } catch (e) {
-      notifyError(e);
-    } finally {
-      setBusy(false);
-    }
-  };
-  return { save, busy };
-}
 
 function AiPanel({ view }: { view: SettingsView }) {
   const { save, busy } = useSaveEngine();
@@ -526,119 +513,6 @@ function LimitsPanel({ limits }: { limits: RiskLimits }) {
           </p>
         </div>
       </form>
-    </Panel>
-  );
-}
-
-// ── 보안 ────────────────────────────────────────────────────────────────
-
-const AUDIT: Record<string, string> = {
-  login: "로그인",
-  login_failed: "로그인 실패",
-  setup_completed: "처음 등록 완료",
-  stepup: "재인증",
-  stepup_failed: "재인증 실패",
-  logout_all: "모든 기기 로그아웃",
-  engine_start: "엔진 켬",
-  engine_pause: "일시정지",
-  engine_stop: "정지",
-  engine_liquidate: "전량 매도 후 정지",
-  engine_confirm_resume: "재시작 확인",
-  env_switch: "거래 환경 전환",
-  intent_approved: "주문 계획 승인",
-  intent_rejected: "주문 계획 거절",
-  settings_engine: "엔진 설정 변경",
-  settings_limits: "리스크 한도 변경",
-  sim_reset: "시뮬레이션 초기화",
-  broker_test_ok: "증권사 연결 확인 성공",
-  broker_test_failed: "증권사 연결 확인 실패",
-};
-
-function SecurityPanel({ view }: { view: SettingsView }) {
-  const sessions = useSessions();
-  const elevated = useElevated();
-  const { logout } = useAuth();
-  const [busy, setBusy] = useState(false);
-
-  const logoutAll = async () => {
-    setBusy(true);
-    try {
-      await elevated(() => api.post("/api/auth/logout-all"));
-      toast.success("모든 기기에서 로그아웃했습니다");
-      await logout().catch(() => undefined);
-    } catch (e) {
-      notifyError(e);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Panel
-      title="보안"
-      actions={
-        <Button size="sm" busy={busy} onClick={() => void logoutAll()}>
-          모든 기기에서 로그아웃
-        </Button>
-      }
-    >
-      <p className="num text-body-sm text-ink-secondary">
-        서버 모드 {view.server.env === "prod" ? "운영" : "개발"} · 접속을 허용한 주소 {view.server.allowed_hosts.join(", ")}
-      </p>
-      {sessions.isPending ? (
-        <SkeletonRows rows={3} />
-      ) : sessions.isError ? (
-        <div className="mt-3">
-          <ErrorState message={errorMessage(sessions.error)} onRetry={() => void sessions.refetch()} />
-        </div>
-      ) : (
-        <div className="mt-4 grid gap-4 xl:grid-cols-2">
-          <div>
-            <h3 className="mb-1 text-body-sm font-semibold text-ink">로그인된 기기 {sessions.data.sessions.length}대</h3>
-            <ul className="divide-y divide-divider rounded-md border border-divider">
-              {sessions.data.sessions.map((s, i) => (
-                <li key={`${s.created_at}-${i}`} className="px-3 py-2 text-body-sm">
-                  <span className="num font-semibold text-ink">{s.ip || "주소 모름"}</span>{" "}
-                  <span className="num text-label text-ink-muted">
-                    마지막 사용 {s.last_seen.slice(0, 16).replace("T", " ")} · 로그인 {s.created_at.slice(0, 16).replace("T", " ")}
-                  </span>
-                  <span className="block truncate text-label text-ink-muted">{s.user_agent}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div>
-            <h3 className="mb-1 text-body-sm font-semibold text-ink">최근 조작 기록</h3>
-            <div className="max-h-72 overflow-auto rounded-md border border-divider">
-              <table className="w-full">
-                <caption className="sr-only">최근 로그인과 설정 변경 기록</caption>
-                <thead className="sticky top-0 bg-surface">
-                  <tr>
-                    <th scope="col" className={TH}>
-                      시각
-                    </th>
-                    <th scope="col" className={TH}>
-                      한 일
-                    </th>
-                    <th scope="col" className={TH}>
-                      접속 주소
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sessions.data.audit.map((a, i) => (
-                    <tr key={`${a.ts}-${i}`}>
-                      <td className={cx(TD, "num whitespace-nowrap")}>{a.ts.slice(5, 16).replace("T", " ")}</td>
-                      <td className={cx(TD, a.action.endsWith("failed") && "font-semibold text-danger")}>{AUDIT[a.action] ?? a.action}</td>
-                      <td className={cx(TD, "num")}>{a.ip}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
     </Panel>
   );
 }

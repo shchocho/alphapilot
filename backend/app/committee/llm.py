@@ -33,6 +33,13 @@ FALLBACK_BETA = "server-side-fallback-2026-07-01"
 EFFORTS: tuple[str, ...] = ("low", "medium", "high")
 
 
+async def close_llm(llm: object) -> None:
+    """심의가 끝난 클라이언트를 닫는다. 닫을 것이 없는 가짜·None이면 아무것도 하지 않는다."""
+    closer = getattr(llm, "aclose", None)
+    if closer is not None:
+        await closer()
+
+
 class LlmError(RuntimeError):
     """호출 실패. kind로 원인을 구분한다."""
 

@@ -6,8 +6,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from contextlib import contextmanager
 from pathlib import Path
 
 from sqlalchemy import BigInteger, Boolean, Float, Integer, String, Text, create_engine, event
@@ -169,11 +167,24 @@ class AiUsageRow(Base):
 class UserRow(Base):
     __tablename__ = "users"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    username: Mapped[str] = mapped_column(String(32), default="admin")
     password_hash: Mapped[str] = mapped_column(Text)
     totp_secret_enc: Mapped[str] = mapped_column(Text)
     totp_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
     totp_last_counter: Mapped[int] = mapped_column(BigInteger, default=0)
+    totp_pending_enc: Mapped[str | None] = mapped_column(Text, nullable=True)  # 인증 앱을 다시 연결하는 중인 새 비밀값
+    recovery_codes: Mapped[str] = mapped_column(Text, default="[]")  # JSON: 쓰지 않은 복구 코드의 SHA-256
     created_at: Mapped[str] = mapped_column(String(32))
+
+
+class BrokerKeyRow(Base):
+    """증권사 키. AP_SECRET_KEY에서 만든 키로 암호화해 둔다. 있으면 .env 값보다 먼저 쓴다."""
+
+    __tablename__ = "broker_keys"
+    env: Mapped[str] = mapped_column(String(8), primary_key=True)  # mock | live
+    app_key_enc: Mapped[str] = mapped_column(Text)
+    secret_key_enc: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[str] = mapped_column(String(32))
 
 
 class SessionRow(Base):
@@ -345,15 +356,3 @@ def make_engine(db_path: Path | str | None) -> Engine:
 def make_session_factory(engine: Engine) -> sessionmaker[Session]:
     return sessionmaker(engine, expire_on_commit=False, future=True)
 
-
-@contextmanager
-def session_scope(factory: sessionmaker[Session]) -> Iterator[Session]:
-    session = factory()
-    try:
-        yield session
-        session.commit()
-    except Exception:
-        session.rollback()
-        raise
-    finally:
-        session.close()

@@ -13,7 +13,7 @@ BUY_THRESHOLD = 0.25
 SELL_THRESHOLD = -0.25
 
 
-def _conviction(score: float) -> Conviction:
+def conviction_for(score: float) -> Conviction:
     if score >= 0.60:
         return "very_high"
     if score >= 0.45:
@@ -47,16 +47,16 @@ def decide_entry(code: str, name: str, seats: list[Signal], technique_name: str)
     dissent = _sentence(seats, "bearish")
     blocked = safety_hold(seats)
     if blocked is not None:
-        return Decision(code, name, "entry", "HOLD", _conviction(score), thesis=blocked, dissent=dissent, source="rules", votes=tally)
+        return Decision(code, name, "entry", "HOLD", conviction_for(score), thesis=blocked, dissent=dissent, source="rules", votes=tally)
     if score >= BUY_THRESHOLD:
         return Decision(
-            code, name, "entry", "BUY", _conviction(score),
+            code, name, "entry", "BUY", conviction_for(score),
             thesis=f"{technique_name} 신호. " + _sentence(seats, "bullish"),
             key_risks=[s.summary for s in seats if s.stance == "bearish"][:3],
             invalidation="손절가 이탈 또는 기법의 청산 규칙 충족",
             dissent=dissent, source="rules", votes=tally,
         )
-    return Decision(code, name, "entry", "HOLD", _conviction(score),
+    return Decision(code, name, "entry", "HOLD", conviction_for(score),
                     thesis=f"좌석 의견 종합 {score:+.2f}로 매수 기준 {BUY_THRESHOLD:+.2f}에 못 미칩니다",
                     dissent=dissent, source="rules", votes=tally)
 
@@ -71,6 +71,6 @@ def decide_holding(code: str, name: str, seats: list[Signal], exit_signals: list
         return Decision(code, name, "holding", "SELL", "medium",
                         thesis=f"좌석 의견 종합 {score:+.2f}로 약세. " + _sentence(seats, "bearish"),
                         dissent=_sentence(seats, "bullish"), source="rules", votes=tally)
-    return Decision(code, name, "holding", "HOLD", _conviction(max(score, 0.0)),
+    return Decision(code, name, "holding", "HOLD", conviction_for(max(score, 0.0)),
                     thesis=f"좌석 의견 종합 {score:+.2f}. 보유 유지", dissent=_sentence(seats, "bearish"),
                     source="rules", votes=tally)

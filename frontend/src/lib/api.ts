@@ -60,6 +60,8 @@ async function demoRequest<T>(method: string, url: string): Promise<T> {
     setDemoAuthed(url === "/api/auth/login");
     return { csrf: "demo" } as T;
   }
+  if (url === "/api/auth/account") return { username: "demo", recovery_codes_left: 10 } as T;
+  if (url === "/api/settings/broker/keys") return { mock: null, live: null } as T;
   if (method !== "GET") throw new ApiError(403, "demo", "데모 화면이라 바꿀 수 없습니다. 내 PC에서 실행하면 쓸 수 있습니다");
   const search = /^\/api\/stocks\/search\?q=(.*)$/.exec(url);
   const response = await fetch(`${import.meta.env.BASE_URL}demo/${demoKey(search ? "/api/stocks/_all" : url)}.json`).catch(() => null);
@@ -110,6 +112,7 @@ export const api = {
   get: <T>(url: string) => request<T>("GET", url),
   post: <T>(url: string, body: unknown = {}) => request<T>("POST", url, body),
   put: <T>(url: string, body: unknown) => request<T>("PUT", url, body),
+  delete: <T>(url: string) => request<T>("DELETE", url),
 };
 
 export function errorMessage(error: unknown): string {

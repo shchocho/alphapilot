@@ -5,6 +5,7 @@ import time
 import pyotp
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 
 from app.api.factory import create_app
 from app.api.security import SESSION_COOKIE
@@ -17,6 +18,7 @@ from app.store.db import make_engine, make_session_factory
 from tests.helpers import END
 
 PASSWORD = "correct horse battery staple"
+USERNAME = "hank"
 
 
 class Session:
@@ -29,21 +31,34 @@ class Session:
         self._step = 0
 
     def code(self) -> str:
-        # 서버는 앞뒤 30초를 허용한다: 첫 호출은 직전 창, 다음은 현재 창, 그다음은 다음 창
-        offset = (self._step - 1) * 30
-        self._step += 1
-        return pyotp.TOTP(self.secret).at(time.time() + offset)
+        # 서버는 앞뒤 한 창(30초)을 허용하고, 한 번 받은 창과 그 앞 창은 다시 받지 않는다.
+        # 그래서 '지금 시각 기준으로 아직 안 쓴 가장 이른 창'을 고른다. 호출 사이에 30초 경계를 넘어도
+        # (느린 PC에서 Argon2가 몇 초 걸릴 때) 이미 지난 창을 내지 않는다.
+        now = int(time.time() // 30)
+        counter = max(self._step + 1, now - 1)
+        assert counter <= now + 1, "이 창에서 쓸 수 있는 코드를 다 썼습니다. reset_codes()를 먼저 부르세요"
+        self._step = counter
+        return pyotp.TOTP(self.secret).at(counter * 30)
+
+    def reset_codes(self) -> None:
+        """서버가 받은 코드 기록을 지워 다시 세 개(직전·현재·다음 창)를 쓸 수 있게 한다. 코드를 많이 쓰는 테스트용."""
+        with self.client.app.state.auth._sf() as s, s.begin():
+            s.execute(text("UPDATE users SET totp_last_counter = 0"))
+        self._step = 0
 
     def setup(self, token: str = "") -> None:
-        r = self.client.post("/api/auth/setup", json={"password": PASSWORD, "setup_token": token})
+        r = self.client.post("/api/auth/setup", json={"username": USERNAME, "password": PASSWORD, "setup_token": token})
         assert r.status_code == 200, r.text
         self.secret = r.json()["secret"]
-        assert self.client.post("/api/auth/setup/confirm", json={"code": self.code()}).status_code == 200
+        r = self.client.post("/api/auth/setup/confirm", json={"code": self.code()})
+        assert r.status_code == 200, r.text
+        self.recovery_codes = r.json()["recovery_codes"]
 
-    def login(self) -> None:
-        r = self.client.post("/api/auth/login", json={"password": PASSWORD, "code": self.code()})
+    def login(self, code: str | None = None, password: str = PASSWORD):
+        r = self.client.post("/api/auth/login", json={"username": USERNAME, "password": password, "code": code or self.code()})
         assert r.status_code == 200, r.text
         self.csrf = r.json()["csrf"]
+        return r.json()
 
     def stepup(self) -> None:
         r = self.post("/api/auth/stepup", {"code": self.code()})
@@ -51,6 +66,9 @@ class Session:
 
     def post(self, url: str, body: dict | None = None):
         return self.client.post(url, json=body or {}, headers={"x-csrf-token": self.csrf})
+
+    def delete(self, url: str):
+        return self.client.delete(url, headers={"x-csrf-token": self.csrf})
 
     def put(self, url: str, body: dict):
         return self.client.put(url, json=body, headers={"x-csrf-token": self.csrf})
@@ -102,7 +120,7 @@ def test_setup_then_login_sets_a_hardened_session_cookie(ctx):
     session = Session(client)
     session.setup()
     assert client.get("/api/auth/state").json()["setup"] == "done"
-    r = client.post("/api/auth/login", json={"password": PASSWORD, "code": session.code()})
+    r = client.post("/api/auth/login", json={"username": USERNAME, "password": PASSWORD, "code": session.code()})
     cookie = r.headers["set-cookie"].lower()
     assert SESSION_COOKIE in cookie and "httponly" in cookie and "samesite=strict" in cookie
     state = client.get("/api/auth/state").json()
@@ -111,23 +129,23 @@ def test_setup_then_login_sets_a_hardened_session_cookie(ctx):
 
 def test_weak_password_and_repeat_setup_are_refused(ctx):
     client, _, _ = ctx
-    assert client.post("/api/auth/setup", json={"password": "short", "setup_token": ""}).status_code == 422
+    assert client.post("/api/auth/setup", json={"username": USERNAME, "password": "short", "setup_token": ""}).status_code == 422
     Session(client).setup()
-    assert client.post("/api/auth/setup", json={"password": PASSWORD, "setup_token": ""}).status_code == 409
+    assert client.post("/api/auth/setup", json={"username": USERNAME, "password": PASSWORD, "setup_token": ""}).status_code == 409
 
 
 def test_setup_requires_the_server_token_when_configured(tmp_path, monkeypatch):
     client, _, _ = make(tmp_path, monkeypatch, AP_SETUP_TOKEN="one-time-value")
     with client:
         assert client.get("/api/auth/state").json()["setup_token_required"] is True
-        assert client.post("/api/auth/setup", json={"password": PASSWORD, "setup_token": "guess"}).status_code == 403
-        assert client.post("/api/auth/setup", json={"password": PASSWORD, "setup_token": "one-time-value"}).status_code == 200
+        assert client.post("/api/auth/setup", json={"username": USERNAME, "password": PASSWORD, "setup_token": "guess"}).status_code == 403
+        assert client.post("/api/auth/setup", json={"username": USERNAME, "password": PASSWORD, "setup_token": "one-time-value"}).status_code == 200
 
 
 def test_production_refuses_setup_without_a_token(tmp_path, monkeypatch):
     client, _, _ = make(tmp_path, monkeypatch, AP_ENV="prod", AP_SECRET_KEY="k" * 40, AP_ALLOWED_HOSTS="testserver")
     with client:
-        r = client.post("/api/auth/setup", json={"password": PASSWORD, "setup_token": ""})
+        r = client.post("/api/auth/setup", json={"username": USERNAME, "password": PASSWORD, "setup_token": ""})
         assert r.status_code == 403 and r.json()["error"]["code"] == "setup_disabled"
         assert "strict-transport-security" in r.headers
 
@@ -135,8 +153,8 @@ def test_production_refuses_setup_without_a_token(tmp_path, monkeypatch):
 def test_wrong_password_or_code_gives_the_same_generic_error(user, ctx):
     client, _, _ = ctx
     client.cookies.clear()
-    bad_password = client.post("/api/auth/login", json={"password": "wrong password here", "code": user.code()})
-    bad_code = client.post("/api/auth/login", json={"password": PASSWORD, "code": "000000"})
+    bad_password = client.post("/api/auth/login", json={"username": USERNAME, "password": "wrong password here", "code": user.code()})
+    bad_code = client.post("/api/auth/login", json={"username": USERNAME, "password": PASSWORD, "code": "000000"})
     assert bad_password.status_code == bad_code.status_code == 401
     assert bad_password.json() == bad_code.json()
 
@@ -146,17 +164,17 @@ def test_a_totp_code_cannot_be_used_twice(ctx):
     session = Session(client)
     session.setup()
     code = session.code()
-    assert client.post("/api/auth/login", json={"password": PASSWORD, "code": code}).status_code == 200
+    assert client.post("/api/auth/login", json={"username": USERNAME, "password": PASSWORD, "code": code}).status_code == 200
     client.cookies.clear()
-    assert client.post("/api/auth/login", json={"password": PASSWORD, "code": code}).status_code == 401
+    assert client.post("/api/auth/login", json={"username": USERNAME, "password": PASSWORD, "code": code}).status_code == 401
 
 
 def test_repeated_failures_are_rate_limited(ctx):
     client, _, _ = ctx
     Session(client).setup()
     for _ in range(5):
-        assert client.post("/api/auth/login", json={"password": "nope nope nope", "code": "123456"}).status_code == 401
-    r = client.post("/api/auth/login", json={"password": "nope nope nope", "code": "123456"})
+        assert client.post("/api/auth/login", json={"username": USERNAME, "password": "nope nope nope", "code": "123456"}).status_code == 401
+    r = client.post("/api/auth/login", json={"username": USERNAME, "password": "nope nope nope", "code": "123456"})
     assert r.status_code == 429 and r.json()["error"]["code"] == "too_many_attempts"
 
 
@@ -172,6 +190,108 @@ def test_logout_ends_the_session(user, ctx):
     client, _, _ = ctx
     assert client.post("/api/auth/logout").status_code == 200
     assert client.get("/api/status").status_code == 401
+
+
+# ── 아이디·복구 코드·비밀번호 변경·인증 앱 재연결 ─────────────────────────────
+
+def test_login_needs_the_right_id_but_ignores_its_case(user, ctx):
+    client, _, _ = ctx
+    client.cookies.clear()
+    wrong = client.post("/api/auth/login", json={"username": "someone", "password": PASSWORD, "code": "123456"})
+    assert wrong.status_code == 401 and wrong.json()["error"]["code"] == "bad_credentials"
+    r = client.post("/api/auth/login", json={"username": " HANK ", "password": PASSWORD, "code": user.code()})
+    assert r.status_code == 200
+    assert client.get("/api/auth/account").json() == {"username": "hank", "recovery_codes_left": 10}
+
+
+def test_setup_rejects_a_bad_login_id(ctx):
+    client, _, _ = ctx
+    r = client.post("/api/auth/setup", json={"username": "a b", "password": PASSWORD, "setup_token": ""})
+    assert r.status_code == 422 and r.json()["error"]["code"] == "bad_username"
+
+
+def test_a_recovery_code_works_once_and_lets_you_relink_the_authenticator(user, ctx):
+    client, _, _ = ctx
+    code = user.recovery_codes[0]
+    client.cookies.clear()
+    assert user.login(code=code.upper())["recovery"] is True
+    assert client.get("/api/auth/state").json()["elevated"] is True  # 인증 앱 없이도 바로 다시 연결할 수 있게
+    assert client.get("/api/auth/account").json()["recovery_codes_left"] == 9
+
+    old_secret = user.secret
+    r = user.post("/api/auth/totp/reset")
+    assert r.status_code == 200 and r.json()["secret"] != old_secret
+    assert user.post("/api/auth/totp/confirm", {"code": pyotp.TOTP(old_secret).now()}).status_code == 401
+    user.secret = r.json()["secret"]
+    user._step = 0  # 서버도 새 비밀값이라 이전 코드 기록을 지운다
+    assert user.post("/api/auth/totp/confirm", {"code": user.code()}).status_code == 200
+    assert user.post("/api/auth/totp/confirm", {"code": "000000"}).status_code == 409  # 끝난 뒤에는 확인할 것이 없다(코드를 보기 전에 막는다)
+
+    client.cookies.clear()
+    assert client.post("/api/auth/login", json={"username": USERNAME, "password": PASSWORD, "code": code}).status_code == 401
+    user.reset_codes()
+    user.login()  # 새 인증 앱 코드로 들어온다
+
+
+def test_new_recovery_codes_replace_the_old_ones_and_need_step_up(user, ctx):
+    client, _, _ = ctx
+    assert user.post("/api/auth/recovery-codes").json()["error"]["code"] == "stepup_required"
+    user.stepup()
+    fresh = user.post("/api/auth/recovery-codes").json()["recovery_codes"]
+    assert len(fresh) == 10 and not set(fresh) & set(user.recovery_codes)
+    client.cookies.clear()
+    assert client.post("/api/auth/login", json={"username": USERNAME, "password": PASSWORD, "code": user.recovery_codes[1]}).status_code == 401
+    user.login(code=fresh[0])
+
+
+def test_changing_the_password_checks_the_current_one_and_signs_out_other_devices(user, ctx):
+    client, _, _ = ctx
+    other = TestClient(client.app)
+    peer = Session(other)
+    peer.secret = user.secret
+    user.reset_codes()
+    peer.login()  # 직전 창의 코드
+    user._step = peer._step  # 두 기기가 같은 인증 앱을 쓰므로 peer가 쓴 창 다음부터
+    new = "a brand new long password"
+    assert user.post("/api/auth/password", {"current": PASSWORD, "new": new}).json()["error"]["code"] == "stepup_required"
+    user.stepup()
+    assert user.post("/api/auth/password", {"current": "wrong wrong wrong", "new": new}).status_code == 401
+    assert user.post("/api/auth/password", {"current": PASSWORD, "new": "short"}).status_code == 422
+    assert user.post("/api/auth/password", {"current": PASSWORD, "new": new}).json() == {"closed": 1}
+    assert client.get("/api/status").status_code == 200 and other.get("/api/status").status_code == 401
+    client.cookies.clear()
+    user.reset_codes()
+    assert client.post("/api/auth/login", json={"username": USERNAME, "password": PASSWORD, "code": user.code()}).status_code == 401
+    user.login(password=new)
+
+
+def test_broker_keys_are_stored_encrypted_override_env_and_are_never_sent_back(tmp_path, monkeypatch):
+    client, _, config = make(tmp_path, monkeypatch, KIWOOM_MOCK_APP_KEY="ENV-APP-KEY-0001", KIWOOM_MOCK_SECRET_KEY="ENV-SECRET-0001")
+    with client:
+        user = Session(client)
+        user.setup()
+        user.login()
+        assert client.get("/api/settings/broker/keys").json() == {"mock": "env", "live": None}
+        body = {"env": "live", "app_key": "DB-LIVE-APP-KEY-1", "secret_key": "DB-LIVE-SECRET-1"}
+        assert user.put("/api/settings/broker/keys", body).json()["error"]["code"] == "stepup_required"
+        user.stepup()
+        assert user.put("/api/settings/broker/keys", body).status_code == 200
+        assert client.get("/api/settings/broker/keys").json() == {"mock": "env", "live": "db"}
+        assert config.kiwoom_keys("live") == ("DB-LIVE-APP-KEY-1", "DB-LIVE-SECRET-1")
+        assert client.get("/api/settings").json()["broker"]["live"]["configured"] is True
+        assert client.get("/api/settings/live").status_code in (404, 405)  # 키를 읽어 가는 경로는 없다
+
+        factory = client.app.state.auth._sf
+        with factory() as s:
+            raw = s.execute(text("SELECT app_key_enc || secret_key_enc FROM broker_keys")).scalar_one()
+        assert "DB-LIVE" not in raw
+        blob = client.get("/api/settings").text + client.get("/api/settings/broker/keys").text + client.get("/api/auth/sessions").text
+        assert "DB-LIVE" not in blob
+
+        assert user.put("/api/settings/broker/keys", {**body, "env": "mock"}).status_code == 200
+        assert config.kiwoom_keys("mock") == ("DB-LIVE-APP-KEY-1", "DB-LIVE-SECRET-1")
+        assert user.delete("/api/settings/broker/keys/mock").status_code == 200
+        assert config.kiwoom_keys("mock") == ("ENV-APP-KEY-0001", "ENV-SECRET-0001")  # 지우면 .env 값으로 돌아간다
 
 
 # ── 보안 헤더·입력 검증 ───────────────────────────────────────────────────────
