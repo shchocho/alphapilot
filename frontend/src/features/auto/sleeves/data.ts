@@ -27,7 +27,7 @@ export function refreshSleeves(): void {
 export const ACTION_TONE: Record<SleeveAction, Tone> = { BUY_MORE: "up", BUY: "up", WAIT: "outline", TRIM: "down", SELL: "down" };
 
 export const DEPTH_LABEL: Record<string, string> = { light: "간단(종목당 1회 호출)", standard: "표준(4회)", deep: "심층(6회)" };
-export const CALLS_PER_DEPTH: Record<string, number> = { light: 1, standard: 4, deep: 6 };
+export const ACTION_WORD: Record<string, string> = { BUY_MORE: "더 모으기", BUY: "모으기", WAIT: "쉬기", TRIM: "줄이기", SELL: "팔기" };
 
 /** 한 회차에 이 종목에 쓰는 기본 금액(백엔드 SleeveConfig.base_amount와 같은 계산). */
 export function baseAmount(sleeve: Pick<SleeveConfig, "amount" | "installments" | "items">, code: string): number {

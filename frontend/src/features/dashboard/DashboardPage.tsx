@@ -308,7 +308,7 @@ function EquityPanel({ d }: { d: Dashboard }) {
   );
 }
 
-export function RegimePanel({ regime }: { regime: RegimeFull }) {
+function RegimePanel({ regime }: { regime: RegimeFull }) {
   return (
     <Panel title="시장 국면">
       <p className="text-h5 font-bold text-ink">

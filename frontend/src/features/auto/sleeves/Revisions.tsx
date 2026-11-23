@@ -6,10 +6,9 @@ import { Badge, Button, Delta, DisclosureIcon, ErrorState, Field, Modal, Panel, 
 import { api, errorMessage } from "@/lib/api";
 import { dayDots, num, pct, wonShort } from "@/lib/format";
 import { notifyError } from "@/lib/queries";
-import { refreshSleeves, useRevisions } from "./data";
+import { ACTION_WORD, refreshSleeves, useRevisions } from "./data";
 import type { Revision } from "./types";
 
-const ACTION_WORD: Record<string, string> = { BUY_MORE: "더 모으기", BUY: "모으기", WAIT: "쉬기", TRIM: "줄이기", SELL: "팔기" };
 const CADENCE: Record<string, string> = { daily: "매일", weekly: "매주", monthly: "매월" };
 const DECIDER: Record<string, string> = { rules: "규칙", ai: "AI 위원회", hybrid: "규칙 + AI 분기" };
 const MODE: Record<string, string> = { paper: "가상 운용", alert: "알림만" };

@@ -2,7 +2,7 @@
 
 import { Check, CircleAlert, X } from "lucide-react";
 import { Badge, DisclosureIcon, Notice, SUMMARY } from "@/components/ui";
-import { dayLabel, labelOf, num, pct } from "@/lib/format";
+import { dayLabel, labelOf, num, pct, signed } from "@/lib/format";
 import { ACTION, ACTION_TONE, checkValueText, CONVICTION, entryText, GATE_OUTCOME, GATE_RULE, GATE_TONE, INTENT_STATUS, INTENT_TONE, planText, STANCE, STANCE_TONE, TECH_STATE, TECH_STATE_TONE } from "@/lib/labels";
 import type { FinalDecision, Gate, IntentCard, Seat, TechniqueResult } from "@/lib/types";
 
@@ -58,7 +58,7 @@ export function SeatList({ seats }: { seats: Seat[] }) {
           <div className="flex items-center justify-between gap-3">
             <span className="text-body-sm font-semibold text-ink">{seat.label}</span>
             <span className="flex items-center gap-2">
-              {!seat.abstained && <span className="num text-label text-ink-muted">{seat.value > 0 ? "+" : seat.value < 0 ? "−" : ""}{Math.abs(seat.value).toFixed(2)}</span>}
+              {!seat.abstained && <span className="num text-label text-ink-muted">{signed(seat.value)}</span>}
               <Badge tone={STANCE_TONE[seat.stance] ?? "neutral"}>{labelOf(STANCE, seat.stance)}</Badge>
             </span>
           </div>

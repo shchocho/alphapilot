@@ -317,7 +317,7 @@ function EngineControl({ status }: { status: Status }) {
                 </span>
                 <span className="text-label text-ink-muted">새 주문을 멈추고 실행 전 계획을 취소합니다. 보유와 손절·익절은 유지합니다.</span>
               </Menu.Item>
-              <Menu.Separator className="my-1 h-px bg-surface-sunken" />
+              <Menu.Separator className="my-1 h-px bg-divider" />
               <Menu.Item
                 className={item}
                 onSelect={() => {

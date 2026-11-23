@@ -5,7 +5,7 @@ import { useMemo } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { cx, Delta, Empty, ErrorState, Panel, SkeletonRows, Stat, TD, TDR, TH, THR } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
-import { dayDots, dayLabel, labelOf, num, pct, wonShort, wonSigned } from "@/lib/format";
+import { dayDots, dayLabel, labelOf, num, pct, signed, wonShort, wonSigned } from "@/lib/format";
 import { CONVICTION, DATA_SOURCE, EXIT_RULE, exitPlanText, heldText } from "@/lib/labels";
 import { useStock } from "@/lib/queries";
 import type { StockDetail } from "@/lib/types";
@@ -212,8 +212,7 @@ function StockView({ s }: { s: StockDetail }) {
               <>
                 위원 의견{" "}
                 <span className="num text-body-sm font-normal text-ink-muted">
-                  종합 {s.seat_blend > 0 ? "+" : s.seat_blend < 0 ? "−" : ""}
-                  {Math.abs(s.seat_blend).toFixed(2)}
+                  종합 {signed(s.seat_blend)}
                 </span>
               </>
             }

@@ -4,7 +4,7 @@ import { ArrowDown, ArrowUp, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Sparkline } from "@/components/charts";
-import { Badge, cx, Delta, Empty, ErrorState, PageHeader, Panel, SkeletonRows, Spinner, TextInput } from "@/components/ui";
+import { Badge, cx, Delta, Empty, ErrorState, PageHeader, Panel, SkeletonRows, Spinner, TextInput, ToggleGroup } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
 import { dayLabel, labelOf, num, pct, wonShort } from "@/lib/format";
 import { DATA_SOURCE, planText, TECH_STATE, TECH_STATE_TONE } from "@/lib/labels";
@@ -66,22 +66,21 @@ export default function DiscoverPage() {
         actions={<StockSearch />}
       />
 
-      <div role="group" aria-label="기법 고르기" className="mb-3 flex gap-2 overflow-x-auto pb-1">
-        {data.techniques.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            aria-pressed={t.key === requested}
-            onClick={() => setParams({ t: t.key }, { replace: true })}
-            className={cx(
-              "tap num flex h-8 shrink-0 items-center gap-2 rounded-md border px-3 text-label whitespace-nowrap transition-colors duration-(--duration-fast)",
-              t.key === requested ? "border-ink bg-secondary font-semibold text-ink" : "border-border bg-surface font-medium text-ink-secondary hover:bg-secondary hover:text-ink",
-            )}
-          >
-            {t.name}
-            <span className="text-ink-muted">{t.count ?? 0}</span>
-          </button>
-        ))}
+      <div className="mb-3">
+        <ToggleGroup
+          label="기법 고르기"
+          value={requested}
+          onChange={(key) => setParams({ t: key }, { replace: true })}
+          options={data.techniques.map((t) => ({
+            value: t.key,
+            label: (
+              <span className="num flex items-center gap-2">
+                {t.name}
+                <span className="text-ink-muted">{t.count ?? 0}</span>
+              </span>
+            ),
+          }))}
+        />
       </div>
 
       {active && (

@@ -140,3 +140,9 @@ export function labelOf(map: Record<string, string>, key: string | null | undefi
   if (!key) return fallback;
   return map[key] ?? key;
 }
+
+/** 의견 값·점수(−1~+1 등)를 부호와 소수 둘째 자리까지. 음수는 진짜 빼기 기호(−)로 적는다. */
+export function signed(value: number): string {
+  const text = Math.abs(value).toFixed(2);
+  return value > 0 ? `+${text}` : value < 0 ? `−${text}` : text;
+}

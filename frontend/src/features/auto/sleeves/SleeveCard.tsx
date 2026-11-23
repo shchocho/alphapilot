@@ -5,9 +5,9 @@ import { toast } from "sonner";
 import { Link } from "react-router-dom";
 import { Badge, Button, Delta, DisclosureIcon, ErrorState, Modal, Notice, Panel, SkeletonRows, Stat, SUMMARY } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
-import { dayDots, num, pct, won, wonShort } from "@/lib/format";
+import { dayDots, num, pct, signed, won, wonShort } from "@/lib/format";
 import { notifyError } from "@/lib/queries";
-import { ACTION_TONE, refreshSleeves, useSignal } from "./data";
+import { ACTION_TONE, ACTION_WORD, refreshSleeves, useSignal } from "./data";
 import type { SleeveSignal, SleeveView, TranscriptStep } from "./types";
 
 export function SleeveCard({ sleeve, total }: { sleeve: SleeveView; total: number }) {
@@ -189,11 +189,6 @@ function SignalRow({ signal: g, paper, onOpen }: { signal: SleeveSignal; paper: 
   );
 }
 
-function signed(x: number): string {
-  return `${x >= 0 ? "+" : "−"}${Math.abs(x).toFixed(2)}`;
-}
-
-const ACTION_WORD: Record<string, string> = { BUY_MORE: "더 모으기", BUY: "모으기", WAIT: "쉬기", TRIM: "줄이기", SELL: "팔기" };
 const STANCE_WORD: Record<string, string> = { bullish: "긍정", bearish: "부정", neutral: "중립", abstain: "기권" };
 
 function SignalDialog({ id, onClose }: { id: string | null; onClose: () => void }) {

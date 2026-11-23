@@ -1,7 +1,7 @@
 /** 백테스트: 가정을 먼저 적고, 같은 기간 코스피와 나란히 놓는다. 좋은 숫자만 크게 보여주지 않는다. */
 
 import { useMemo, useState, type FormEvent } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { TimeChart } from "@/components/charts";
 import { Button, Check, cx, Delta, DisclosureIcon, Empty, ErrorState, Field, Notice, PageHeader, Panel, Select, SkeletonRows, TD, TDR, TextInput, TH, THR } from "@/components/ui";
@@ -47,7 +47,7 @@ export default function BacktestPage() {
           <ResultView r={result.data} view={settings.data} />
         ) : (
           <Panel>
-            <Empty title="아직 돌려 본 백테스트가 없습니다">위에서 기간과 기법을 정하고 실행하세요. 143종목 2년 치면 20초쯤 걸립니다.</Empty>
+            <Empty title="아직 돌려 본 백테스트가 없습니다">위에서 기간과 기법을 정하고 실행하세요. 종목 수와 기간에 따라 수십 초 걸릴 수 있습니다.</Empty>
           </Panel>
         )}
       </div>
@@ -373,7 +373,7 @@ function ResultView({ r, view }: { r: BacktestResult; view: SettingsView | undef
 
       <Panel title={<span className="num">판 거래 {num(sells.length)}건</span>} bodyClassName="">
         {sells.length === 0 ? (
-          <p className="p-4 text-body-sm text-ink-secondary">판 거래가 없습니다.</p>
+          <Empty title="판 거래가 없습니다" />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-160">
@@ -400,7 +400,11 @@ function ResultView({ r, view }: { r: BacktestResult; view: SettingsView | undef
                 {sells.slice(0, sellLimit).map((t, i) => (
                   <tr key={`${t.day}-${t.code}-${i}`}>
                     <td className={cx(TD, "num whitespace-nowrap")}>{dayDots(t.day)}</td>
-                    <td className={cx(TD, "whitespace-nowrap")}>{t.name}</td>
+                    <td className={cx(TD, "whitespace-nowrap")}>
+                      <Link to={`/stocks/${t.code}`} className="text-ink no-underline hover:underline">
+                        {t.name}
+                      </Link>
+                    </td>
                     <td className={cx(TD, "text-ink-secondary")}>
                       {techniqueName(t.technique)} · {FILL_REASON[t.reason] ?? t.reason}
                     </td>
