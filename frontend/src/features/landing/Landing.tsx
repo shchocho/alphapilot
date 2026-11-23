@@ -433,8 +433,8 @@ function Product() {
           <dl className="mt-8 divide-y divide-divider border-y border-divider">
             {[
               ["승인 대기", "주문 계획마다 수량과 근거를 보고 승인하거나 거절합니다."],
+              ["손실 한도", "오늘 쓸 수 있는 손실과 투자 비중을 계기로 먼저 보여 줍니다. 한도를 다 쓰면 그날 새 매수를 멈춥니다."],
               ["장부", "산 것, 판 것, 사지 않은 이유까지 번호를 매겨 남깁니다. 지우거나 고칠 수 없습니다."],
-              ["판단 사슬", "거래번호를 누르면 그 종목이 거친 단계를 처음부터 따라갑니다."],
             ].map(([term, text]) => (
               <div key={term} className="grid grid-cols-[6.5em_1fr] gap-x-4 py-4">
                 <dt className="text-body-sm font-semibold text-ink">{term}</dt>
@@ -452,7 +452,7 @@ function Product() {
               height={1350}
               loading="lazy"
               decoding="async"
-              alt="관제 화면: 오늘 판정, 손실 한도와 투자 비중 계기, 통장정리(장부), 감시 중인 조건, 시장 국면이 한 화면에 있다. 시뮬레이션 데이터로 찍었다."
+              alt="관제 화면: 맨 위에 승인을 기다리는 주문 계획 6건이라는 판정, 그 아래 오늘 손실 한도·손절 시 잃는 금액·투자 비중·낙폭 계기, 종목별 승인 카드(수량, 예상 가격, 손절 가격, 기법)가 있다. 시뮬레이션 데이터로 찍었다."
               className="block h-auto w-full"
             />
           </picture>
