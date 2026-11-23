@@ -18,11 +18,10 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.committee.deliberation import Budget, Transcript
-from app.committee.llm import LlmClient, LlmError, LlmResult, estimate_cost
-from app.committee.rules_committee import _conviction
+from app.committee.llm import LlmClient, LlmError, LlmResult, close_llm, estimate_cost
+from app.committee.rules_committee import conviction_for
 from app.core.clock import now_kst
 from app.core.models import CONVICTION_LABEL, StockInfo
-from app.data.provider import INDEX_CODES
 from app.data.store import FULL_HISTORY_BARS
 from app.data.universe import load_universe, universe_map
 from app.engine.core import Event
@@ -270,7 +269,7 @@ class SleeveService:
                     s.add(SleeveTradeRow(sleeve_id=sl.id, rev=rev, d=day.isoformat(), kind="deposit" if delta > 0 else "withdraw",
                                          amount=abs(delta), created_at=stamp))
                 book_row.state, book_row.updated_at = json.dumps(book.to_dict()), stamp
-        self.svc._log(self.svc.settings().env, Event("sleeve", f"운용 계획 r{rev} 저장: " + " · ".join(changes),
+        self.svc.log_event(self.svc.settings().env, Event("sleeve", f"운용 계획 r{rev} 저장: " + " · ".join(changes),
                                                      payload={"rev": rev, "note": note, "restored_from": restored_from}), day=day)
         self.svc.bus.publish("sleeves")
         return {"rev": rev, "changes": changes}
@@ -301,8 +300,7 @@ class SleeveService:
         if self._market is not None and self._market[0] == key:
             return self._market[1]
         universe = [s.code for s in load_universe()]
-        bars = self.svc.store.load_many(universe + outside)
-        index_bars = {c: frame for c in INDEX_CODES if not (frame := self.svc.store.load(c)).empty}
+        bars, index_bars = self.svc.load_bars(universe + outside)
         info = dict(universe_map())
         names = self._names()
         for code in outside:
@@ -454,7 +452,7 @@ class SleeveService:
         llm_error = ""
         if needs_ai:
             try:
-                llm = self.svc._make_llm(st)
+                llm = self.svc.make_llm(st)
             except LlmError as exc:
                 llm_error = str(exc)
         budget = BudgetGuard(self.sf, st.env, st.ai_daily_budget_usd)
@@ -464,17 +462,15 @@ class SleeveService:
         self.svc.bus.publish("status")
         try:
             results = await asyncio.gather(*[
-                self._run_sleeve(sl, books[sl.id], market, day, regime, throttled, budget, llm_error, run_id, rev_row.rev)
+                self._run_sleeve(sl, books[sl.id], market, day, regime, throttled, budget, llm_error)
                 for sl in targets
             ])
         finally:
-            closer = getattr(llm, "aclose", None)
-            if closer is not None:
-                await closer()
+            await close_llm(llm)
         return self._persist(run_id, day, rev_row.rev, trigger, results, fills)
 
     async def _run_sleeve(self, cfg: SleeveConfig, book: logic.Book, market: Market, day: date, regime: RegimeState,
-                          llm: LlmClient | None, budget: Budget, llm_error: str, run_id: str, rev: int) -> _SleeveRun:
+                          llm: LlmClient | None, budget: Budget, llm_error: str) -> _SleeveRun:
         out = _SleeveRun(cfg, book, [], [])
         base_costs = self.svc.settings().cost_model()
         reserved = 0.0
@@ -507,20 +503,20 @@ class SleeveService:
             )
             transcript: Transcript | None = None
             if cfg.decider == "rules":
-                verdict = Verdict(rules, _conviction(abs(a.score)), _rules_thesis(a, rules, regime.allow_new_buys))
+                verdict = Verdict(rules, conviction_for(abs(a.score)), _rules_thesis(a, rules, regime.allow_new_buys))
             elif llm is None:
                 if cfg.decider == "ai":
                     verdict = Verdict("WAIT", "very_low", "AI를 쓸 수 없어 이번 회차는 쉽니다", source="ai", status="review",
                                       status_detail=llm_error or "AI 클라이언트 없음")
                 else:
-                    verdict = Verdict(rules, _conviction(abs(a.score)), _rules_thesis(a, rules, regime.allow_new_buys) + " (AI를 쓸 수 없어 규칙 결론)")
+                    verdict = Verdict(rules, conviction_for(abs(a.score)), _rules_thesis(a, rules, regime.allow_new_buys) + " (AI를 쓸 수 없어 규칙 결론)")
             elif cfg.decider == "ai":
                 self.busy = f"바구니 '{cfg.name}': {name} 심의"
                 verdict, transcript = await deliberate_sleeve(ctx, llm, budget, depth=cfg.depth)
             else:
                 reason = logic.branch_reason(a.score, holding, pnl)
                 if reason is None:
-                    verdict = Verdict(rules, _conviction(abs(a.score)), _rules_thesis(a, rules, regime.allow_new_buys))
+                    verdict = Verdict(rules, conviction_for(abs(a.score)), _rules_thesis(a, rules, regime.allow_new_buys))
                 else:
                     self.busy = f"바구니 '{cfg.name}': {name} 분기 판단"
                     verdict, transcript = await sleeve_second_opinion(ctx, reason, llm, budget)
@@ -590,7 +586,7 @@ class SleeveService:
         for item in summary:
             acts = ", ".join(f"{logic.ACTION_LABELS[k]} {v}" for k, v in item["tally"].items())
             parts.append(f"'{item['name']}' {acts}")
-        self.svc._log(self.svc.settings().env, Event("sleeve", f"바구니 심의(r{rev}): " + " · ".join(parts),
+        self.svc.log_event(self.svc.settings().env, Event("sleeve", f"바구니 심의(r{rev}): " + " · ".join(parts),
                                                      payload={"run_id": run_id, "trigger": trigger}), day=day)
         self.svc.bus.publish("sleeves")
         return {"run_id": run_id, "as_of": day.isoformat(), "rev": rev, "sleeves": summary, "fills": fills,
@@ -657,7 +653,7 @@ class SleeveService:
                 rows[sid].state, rows[sid].updated_at = json.dumps(book.to_dict()), stamp
         if fills:
             text = ", ".join(f"{f['name']} {'매수' if f['side'] == 'buy' else '매도'} {f['qty']}주" for f in fills[:6])
-            self.svc._log(self.svc.settings().env, Event("sleeve", f"바구니 가상 체결 {len(fills)}건: {text}"), day=day)
+            self.svc.log_event(self.svc.settings().env, Event("sleeve", f"바구니 가상 체결 {len(fills)}건: {text}"), day=day)
         return fills
 
     def liquidate(self, sleeve_id: str) -> dict[str, Any]:
@@ -681,7 +677,7 @@ class SleeveService:
                 s.add(SleeveOrderRow(id=_new_id("o", 16), sleeve_id=sleeve_id, signal_id="", rev=cur[0].rev if cur else 0, made_on=day,
                                      code=code, name=lot.name, kind=lot.kind, side="sell", qty=lot.qty, status="pending", note="모두 팔기"))
             count = len(book.positions)
-        self.svc._log(self.svc.settings().env, Event("sleeve", f"'{cfg.name}' 바구니 모두 팔기 예약 {count}종목(다음 거래일 시가)"))
+        self.svc.log_event(self.svc.settings().env, Event("sleeve", f"'{cfg.name}' 바구니 모두 팔기 예약 {count}종목(다음 거래일 시가)"))
         self.svc.bus.publish("sleeves")
         return {"orders": count}
 

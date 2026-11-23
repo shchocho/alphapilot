@@ -11,6 +11,7 @@ from typing import Any
 import numpy as np
 from sqlalchemy import func, select
 
+from app.broker.kiwoom.client import BASE_URL as KIWOOM_BASE_URL
 from app.committee.deliberation import DEPTH_LABELS
 from app.committee.llm import MODEL_LABELS, SELECTABLE_MODELS
 from app.committee.seats import SEAT_LABELS, blend, build_seats
@@ -38,7 +39,7 @@ def _as_of(svc: EngineService) -> date:
     """화면의 기준일: 시뮬레이션이 처리한 마지막 거래일, 없으면 최신 일봉 날짜."""
     if svc.market is None:
         raise EngineError("일봉 데이터가 없습니다. 설정에서 데이터를 갱신하세요")
-    sim_day = svc.status()["sim_day"]
+    sim_day = svc.sim_day()
     return date.fromisoformat(sim_day) if sim_day else svc.market.last_day()
 
 
@@ -389,9 +390,9 @@ def settings_view(svc: EngineService) -> dict[str, Any]:
         },
         "ai": {"configured": cfg.has_anthropic_key, "usage": [{"day": d, "cost_usd": round(float(c or 0), 4), "calls": int(n)} for d, c, n in usage]},
         "broker": {
-            "mock": {"configured": cfg.has_kiwoom_keys("mock"), "base_url": "https://mockapi.kiwoom.com"},
-            "live": {"configured": cfg.has_kiwoom_keys("live"), "base_url": "https://api.kiwoom.com", "allowed_by_server": cfg.allow_live_trading},
-            "runner_available": False,
+            "mock": {"configured": cfg.has_kiwoom_keys("mock"), "base_url": KIWOOM_BASE_URL["mock"]},
+            "live": {"configured": cfg.has_kiwoom_keys("live"), "base_url": KIWOOM_BASE_URL["live"], "allowed_by_server": cfg.allow_live_trading},
+            "runner_available": svc.live_runner_available,
         },
         "data": {"source": svc.provider.name, "day": svc.market.last_day().isoformat() if svc.market else None,
                  "stocks": len(svc.market.stocks) if svc.market else 0, "refreshed_at": svc.data_refreshed_at},

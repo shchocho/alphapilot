@@ -32,7 +32,6 @@ class RegimeParams:
 
 DEFAULT_REGIME_PARAMS = RegimeParams()
 
-_DIST_LEVELS = ("normal", "caution", "high", "severe")
 _DIST_CAP = {"normal": 1.0, "caution": 1.0, "high": 0.75, "severe": 0.5}
 _DIST_SCORE = {"normal": 100.0, "caution": 70.0, "high": 40.0, "severe": 15.0}
 _DIST_LABEL = {"normal": "정상", "caution": "주의", "high": "높음", "severe": "심각"}

@@ -6,8 +6,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from contextlib import contextmanager
 from pathlib import Path
 
 from sqlalchemy import BigInteger, Boolean, Float, Integer, String, Text, create_engine, event
@@ -358,15 +356,3 @@ def make_engine(db_path: Path | str | None) -> Engine:
 def make_session_factory(engine: Engine) -> sessionmaker[Session]:
     return sessionmaker(engine, expire_on_commit=False, future=True)
 
-
-@contextmanager
-def session_scope(factory: sessionmaker[Session]) -> Iterator[Session]:
-    session = factory()
-    try:
-        yield session
-        session.commit()
-    except Exception:
-        session.rollback()
-        raise
-    finally:
-        session.close()

@@ -9,19 +9,41 @@ import json
 import logging
 import uuid
 from collections.abc import AsyncIterator
-from datetime import date
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, FastAPI, Query, Request, Response
+from fastapi import Path as FastApiPath
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
-from pydantic import BaseModel, Field, SecretStr, ValidationError
+from pydantic import SecretStr, ValidationError
 from sqlalchemy import text
 from sqlalchemy.orm import Session, sessionmaker
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api import views
+from app.api.schemas import (
+    DAY,
+    RECORD_ID,
+    STOCK_CODE,
+    AdvanceBody,
+    BacktestBody,
+    BrokerKeysBody,
+    BrokerTestBody,
+    CodeBody,
+    ConfirmBody,
+    DecideBody,
+    EnvBody,
+    LoginBody,
+    PasswordBody,
+    PlanBody,
+    PreviewBody,
+    RestoreBody,
+    SeenBody,
+    SetupBody,
+    SimResetBody,
+    SleeveRunBody,
+)
 from app.api.security import (
     CSRF_HEADER,
     HSTS,
@@ -40,10 +62,11 @@ from app.broker.kiwoom.errors import KiwoomError
 from app.config import Settings, get_settings
 from app.core.clock import now_kst
 from app.engine.core import EngineConfig
-from app.engine.service import EngineError, EngineService, Scheduler
+from app.engine.scheduler import Scheduler
+from app.engine.service import EngineError, EngineService
 from app.journal.ledger import row_to_dict
 from app.risk.limits import RiskLimits
-from app.sleeves.config import CODE_PATTERN, SLEEVE_ID_PATTERN, PlanConfig
+from app.sleeves.config import CODE_PATTERN, SLEEVE_ID_PATTERN
 from app.sleeves.service import SleeveService
 from app.store.db import BacktestRow, make_engine, make_session_factory
 from app.store.lock import EngineLock
@@ -51,96 +74,7 @@ from app.store.maintenance import MaintenancePlan, run_daily
 from app.techniques.registry import ENTRY_KEYS
 
 log = logging.getLogger("alphapilot")
-STOCK_CODE = r"^\d{6}$"
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
-
-
-# ── 요청 본문 ─────────────────────────────────────────────────────────────────
-
-class SetupBody(BaseModel):
-    username: str = Field(min_length=1, max_length=64)
-    password: str = Field(min_length=1, max_length=256)
-    setup_token: str = Field("", max_length=256)
-
-
-class CodeBody(BaseModel):
-    code: str = Field(min_length=6, max_length=8)
-
-
-class LoginBody(BaseModel):
-    username: str = Field(min_length=1, max_length=64)
-    password: str = Field(min_length=1, max_length=256)
-    code: str = Field(min_length=6, max_length=16)  # 인증 앱 6자리 또는 복구 코드(xxxxx-xxxxx)
-
-
-class PasswordBody(BaseModel):
-    current: str = Field(min_length=1, max_length=256)
-    new: str = Field(min_length=1, max_length=256)
-
-
-class BrokerKeysBody(BaseModel):
-    env: Literal["mock", "live"]
-    app_key: str = Field(min_length=8, max_length=512)
-    secret_key: str = Field(min_length=8, max_length=512)
-
-
-class DecideBody(BaseModel):
-    approve: bool
-    note: str = Field("", max_length=200)
-
-
-class AdvanceBody(BaseModel):
-    days: int = Field(1, ge=1, le=250)
-    auto_approve: bool = False
-
-
-class SeenBody(BaseModel):
-    seq: int = Field(ge=0)
-
-
-class EnvBody(BaseModel):
-    env: Literal["sim", "mock", "live"]
-    confirm: str = Field("", max_length=64)
-
-
-class BrokerTestBody(BaseModel):
-    env: Literal["mock", "live"]
-
-
-class SimResetBody(BaseModel):
-    start: date | None = None
-    initial_cash: int | None = Field(None, ge=1_000_000, le=100_000_000_000)
-
-
-class ConfirmBody(BaseModel):
-    confirm: str = Field("", max_length=64)
-
-
-class PlanBody(BaseModel):
-    config: PlanConfig
-    note: str = Field("", max_length=200)
-
-
-class RestoreBody(BaseModel):
-    note: str = Field("", max_length=200)
-
-
-class SleeveRunBody(BaseModel):
-    force: bool = False
-    sleeve_ids: list[str] | None = Field(None, max_length=6)
-
-
-class PreviewBody(BaseModel):
-    config: PlanConfig | None = None
-    start: date
-
-
-class BacktestBody(BaseModel):
-    start: date | None = None
-    end: date | None = None
-    initial_cash: int = Field(30_000_000, ge=1_000_000, le=100_000_000_000)
-    techniques: list[str] = Field(default_factory=lambda: list(ENTRY_KEYS))
-    max_candidates: int = Field(8, ge=1, le=30)
 
 
 # 화면 파일의 콘텐츠 형식. 운영체제 설정(mimetypes)에 기대지 않는다: 윈도우는 .js를 text/plain으로 알려주기도 해서
@@ -384,7 +318,7 @@ def create_app(
         return {"seen_seq": seq}
 
     @api.get("/ledger/chain/{chain_id}")
-    def ledger_chain(chain_id: Annotated[str, Path_(r"^[0-9A-Za-z\-]{3,40}$")]) -> dict[str, Any]:
+    def ledger_chain(chain_id: Annotated[str, Path_(RECORD_ID)]) -> dict[str, Any]:
         return views.chain(svc, chain_id)
 
     @api.get("/ledger/verify")
@@ -411,11 +345,11 @@ def create_app(
         return views.stock_detail(svc, code)
 
     @api.get("/committee")
-    def committee(day: Annotated[str | None, Query(pattern=r"^\d{4}-\d{2}-\d{2}$")] = None) -> dict[str, Any]:
+    def committee(day: Annotated[str | None, Query(pattern=DAY)] = None) -> dict[str, Any]:
         return views.committee_sessions(svc, day)
 
     @api.get("/committee/{decision_id}")
-    def committee_decision(decision_id: Annotated[str, Path_(r"^[0-9A-Za-z\-]{3,40}$")]) -> dict[str, Any]:
+    def committee_decision(decision_id: Annotated[str, Path_(RECORD_ID)]) -> dict[str, Any]:
         return views.decision_detail(svc, decision_id)
 
     @api.get("/intents/pending")
@@ -423,7 +357,7 @@ def create_app(
         return {"cards": views.pending_cards(svc)}
 
     @api.post("/intents/{intent_id}/decide")
-    def intent_decide(intent_id: Annotated[str, Path_(r"^[0-9A-Za-z\-]{3,40}$")], body: DecideBody, request: Request) -> dict[str, Any]:
+    def intent_decide(intent_id: Annotated[str, Path_(RECORD_ID)], body: DecideBody, request: Request) -> dict[str, Any]:
         data = svc.decide_intent(intent_id, body.approve, body.note)
         auth.audit("intent_approved" if body.approve else "intent_rejected", {"intent": intent_id}, client_ip(request))
         return data
@@ -545,6 +479,7 @@ def create_app(
             auth.audit("broker_test_failed", {"env": body.env, "code": exc.code}, client_ip(request))
             return {"ok": False, "code": exc.code, "message": str(exc), "hint": exc.hint}
         except Exception as exc:  # noqa: BLE001 - 네트워크 오류 등
+            log.warning("키움 연결 확인 실패(%s): %s", body.env, type(exc).__name__)  # 메시지에 키가 섞일 수 있어 종류만 남긴다
             return {"ok": False, "message": f"연결하지 못했습니다({type(exc).__name__})"}
         finally:
             await client.aclose()
@@ -700,7 +635,5 @@ def create_app(
 
 
 def Path_(pattern: str):  # noqa: N802 - FastAPI Path에 정규식만 붙이는 짧은 도우미
-    from fastapi import Path as FastApiPath
-
     return FastApiPath(pattern=pattern)
 

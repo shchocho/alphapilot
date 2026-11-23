@@ -31,10 +31,14 @@ class Session:
         self._step = 0
 
     def code(self) -> str:
-        # 서버는 앞뒤 30초를 허용한다: 첫 호출은 직전 창, 다음은 현재 창, 그다음은 다음 창
-        offset = (self._step - 1) * 30
-        self._step += 1
-        return pyotp.TOTP(self.secret).at(time.time() + offset)
+        # 서버는 앞뒤 한 창(30초)을 허용하고, 한 번 받은 창과 그 앞 창은 다시 받지 않는다.
+        # 그래서 '지금 시각 기준으로 아직 안 쓴 가장 이른 창'을 고른다. 호출 사이에 30초 경계를 넘어도
+        # (느린 PC에서 Argon2가 몇 초 걸릴 때) 이미 지난 창을 내지 않는다.
+        now = int(time.time() // 30)
+        counter = max(self._step + 1, now - 1)
+        assert counter <= now + 1, "이 창에서 쓸 수 있는 코드를 다 썼습니다. reset_codes()를 먼저 부르세요"
+        self._step = counter
+        return pyotp.TOTP(self.secret).at(counter * 30)
 
     def reset_codes(self) -> None:
         """서버가 받은 코드 기록을 지워 다시 세 개(직전·현재·다음 창)를 쓸 수 있게 한다. 코드를 많이 쓰는 테스트용."""
@@ -219,8 +223,9 @@ def test_a_recovery_code_works_once_and_lets_you_relink_the_authenticator(user, 
     assert r.status_code == 200 and r.json()["secret"] != old_secret
     assert user.post("/api/auth/totp/confirm", {"code": pyotp.TOTP(old_secret).now()}).status_code == 401
     user.secret = r.json()["secret"]
+    user._step = 0  # 서버도 새 비밀값이라 이전 코드 기록을 지운다
     assert user.post("/api/auth/totp/confirm", {"code": user.code()}).status_code == 200
-    assert user.post("/api/auth/totp/confirm", {"code": user.code()}).status_code == 409  # 끝난 뒤에는 확인할 것이 없다
+    assert user.post("/api/auth/totp/confirm", {"code": "000000"}).status_code == 409  # 끝난 뒤에는 확인할 것이 없다(코드를 보기 전에 막는다)
 
     client.cookies.clear()
     assert client.post("/api/auth/login", json={"username": USERNAME, "password": PASSWORD, "code": code}).status_code == 401
@@ -246,7 +251,7 @@ def test_changing_the_password_checks_the_current_one_and_signs_out_other_device
     peer.secret = user.secret
     user.reset_codes()
     peer.login()  # 직전 창의 코드
-    user._step = 1  # 재인증은 현재 창의 코드
+    user._step = peer._step  # 두 기기가 같은 인증 앱을 쓰므로 peer가 쓴 창 다음부터
     new = "a brand new long password"
     assert user.post("/api/auth/password", {"current": PASSWORD, "new": new}).json()["error"]["code"] == "stepup_required"
     user.stepup()

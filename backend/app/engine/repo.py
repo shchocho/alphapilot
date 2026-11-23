@@ -7,7 +7,7 @@ from dataclasses import asdict, fields
 from datetime import date
 from typing import Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.core.clock import now_kst
@@ -185,10 +185,6 @@ def recent_exits(s: Session, env: str, limit: int = 10) -> list[tuple[date, str,
         .order_by(TradeRow.id.desc()).limit(limit)
     ).all()
     return [(date.fromisoformat(d), reason, float(pnl or 0)) for d, reason, pnl in reversed(rows)]
-
-
-def orders_on(s: Session, env: str, day: date) -> int:
-    return int(s.execute(select(func.count()).select_from(TradeRow).where(TradeRow.env == env, TradeRow.day == day.isoformat())).scalar_one())
 
 
 def reset_env(s: Session, env: str, initial_cash: int) -> None:

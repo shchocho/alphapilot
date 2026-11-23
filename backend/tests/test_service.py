@@ -15,14 +15,8 @@ from app.data.universe import load_universe
 from app.engine import repo
 from app.engine import service as service_module
 from app.engine.core import EngineConfig
-from app.engine.service import (
-    CAUGHT_UP_KEY,
-    MAINTENANCE_DONE_KEY,
-    SCHEDULER_DONE_KEY,
-    EngineError,
-    EngineService,
-    Scheduler,
-)
+from app.engine.scheduler import MAINTENANCE_DONE_KEY, SCHEDULER_DONE_KEY, Scheduler
+from app.engine.service import CAUGHT_UP_KEY, EngineError, EngineService
 from app.engine.settings import EngineSettings
 from app.risk.limits import RiskLimits
 from app.store.db import (

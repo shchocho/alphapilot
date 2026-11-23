@@ -171,9 +171,6 @@ class Position:
     chain_id: str = ""
     days_held: int = 0  # 진입일 0, 이후 거래일마다 1씩 늘어난다
 
-    def market_value(self, price: float) -> float:
-        return self.qty * price
-
     def open_risk(self, price: float) -> float:
         """지금 가격에서 손절가까지 내려가면 줄어드는 금액."""
         return max(0.0, price - self.stop) * self.qty
